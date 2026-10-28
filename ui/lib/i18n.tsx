@@ -44,6 +44,7 @@ const messages: Record<Locale, Messages> = {
     ,"sing.fixSong": "Fix the song name", "sing.fixSongHint": "Read from the YouTube video. OnKey finds the lyrics by this name.", "sing.artist": "Artist", "sing.title": "Title"
     ,"sing.sessionFinished": "Session finished", "sing.howDid": "Here’s how you did.", "sing.noTakes": "No takes long enough to score this time."
     ,"sing.score": "score", "sing.playSongMini": "Play a song in Spotify or Apple Music"
+    ,"starter.why.wubai": "Clear melody, good for following along", "starter.why.renai": "A familiar melody, good for a first demo", "starter.why.jay": "A Mandarin classic, good for pitch practice", "starter.why.andylau": "Steady rhythm, good for singing all the way through", "starter.why.steady": "Easy: a steady, simple melody", "starter.why.singalong": "The singalong everyone knows", "starter.why.low": "Low and steady, easy to follow", "starter.why.held": "Long held notes to hold steady", "starter.why.verses": "Gentle verses, big chorus", "starter.why.clear": "One clear voice, a chorus that lifts", "starter.why.pitch": "Slow and expressive: great for pitch", "starter.why.range": "The challenge: huge range"
   },
   zh: {
     "nav.sing": "演唱", "nav.library": "曲库", "nav.history": "演唱记录", "nav.settings": "设置",
@@ -82,6 +83,7 @@ const messages: Record<Locale, Messages> = {
     ,"sing.fixSong": "修正歌曲名称", "sing.fixSongHint": "信息来自 YouTube 视频。OnKey 会用这个名称查找歌词。", "sing.artist": "歌手", "sing.title": "歌名"
     ,"sing.sessionFinished": "演唱结束", "sing.howDid": "看看这次表现。", "sing.noTakes": "这次没有足够长的演唱记录可评分。"
     ,"sing.score": "得分", "sing.playSongMini": "在 Spotify 或 Apple Music 播放歌曲"
+    ,"starter.why.wubai": "旋律清晰，适合练习跟唱", "starter.why.renai": "熟悉的旋律，适合初次演示", "starter.why.jay": "经典华语歌曲，适合练音准", "starter.why.andylau": "节奏稳定，适合完整演唱", "starter.why.steady": "简单：旋律稳定清晰", "starter.why.singalong": "大家都熟悉的跟唱歌曲", "starter.why.low": "音域较低、节奏稳定，容易跟唱", "starter.why.held": "长音练习，保持音准稳定", "starter.why.verses": "主歌舒缓，副歌有挑战", "starter.why.clear": "人声清晰，副歌逐渐升高", "starter.why.pitch": "速度较慢、情感丰富，适合练音准", "starter.why.range": "挑战：音域跨度很大"
   }
 };
 

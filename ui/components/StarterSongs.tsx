@@ -15,14 +15,18 @@ export const STARTER_PLAYLIST_APPLE_URL: string = "";
  *  known; easy to hard). Titles, artists and a reason only: no lyrics, audio or covers bundled (a cover is looked
  *  up on Apple's iTunes Search once and kept in the app's data folder: music.rs starter_cover). */
 export const STARTER_SONGS: { artist: string; title: string; why: string }[] = [
-  { artist: "Ben E. King", title: "Stand By Me", why: "Easy: a steady, simple melody" },
-  { artist: "Oasis", title: "Wonderwall", why: "The singalong everyone knows" },
-  { artist: "Tracy Chapman", title: "Fast Car", why: "Low and steady, easy to follow" },
-  { artist: "Lana Del Rey", title: "Young And Beautiful", why: "Long held notes to hold steady" },
-  { artist: "Lewis Capaldi", title: "Someone You Loved", why: "Gentle verses, big chorus" },
-  { artist: "Adele", title: "Someone Like You", why: "One clear voice, a chorus that lifts" },
-  { artist: "Jeff Buckley", title: "Hallelujah", why: "Slow and expressive: great for pitch" },
-  { artist: "Whitney Houston", title: "I Will Always Love You", why: "The challenge: huge range" },
+  { artist: "伍佰", title: "突然的自我", why: "starter.why.wubai" },
+  { artist: "刘若英", title: "后来", why: "starter.why.renai" },
+  { artist: "周杰伦", title: "晴天", why: "starter.why.jay" },
+  { artist: "刘德华", title: "练习", why: "starter.why.andylau" },
+  { artist: "Ben E. King", title: "Stand By Me", why: "starter.why.steady" },
+  { artist: "Oasis", title: "Wonderwall", why: "starter.why.singalong" },
+  { artist: "Tracy Chapman", title: "Fast Car", why: "starter.why.low" },
+  { artist: "Lana Del Rey", title: "Young And Beautiful", why: "starter.why.held" },
+  { artist: "Lewis Capaldi", title: "Someone You Loved", why: "starter.why.verses" },
+  { artist: "Adele", title: "Someone Like You", why: "starter.why.clear" },
+  { artist: "Jeff Buckley", title: "Hallelujah", why: "starter.why.pitch" },
+  { artist: "Whitney Houston", title: "I Will Always Love You", why: "starter.why.range" },
 ];
 
 /** Apple Music's search for a song (a plain link to music.apple.com, no API; it goes to your own storefront). */
@@ -158,16 +162,6 @@ function PlaylistStrip() {
 
 export default function StarterSongs({ onHide, className = "", hideLabel = "Hide suggestions" }: { onHide: () => void; className?: string; hideLabel?: string }) {
   const { t } = useI18n();
-  const why: Record<string, string> = {
-    "Easy: a steady, simple melody": "简单：旋律稳定清晰",
-    "The singalong everyone knows": "大家都熟悉的跟唱歌曲",
-    "Low and steady, easy to follow": "音域较低、节奏稳定，容易跟唱",
-    "Long held notes to hold steady": "长音练习，保持音准稳定",
-    "Gentle verses, big chorus": "主歌舒缓，副歌有挑战",
-    "One clear voice, a chorus that lifts": "人声清晰，副歌逐渐升高",
-    "Slow and expressive: great for pitch": "速度较慢、情感丰富，适合练音准",
-    "The challenge: huge range": "挑战：音域跨度很大",
-  };
   const playlist = !!(STARTER_PLAYLIST_URL || STARTER_PLAYLIST_APPLE_URL);
   const found = useStarterCovers();
   return (
@@ -188,7 +182,7 @@ export default function StarterSongs({ onHide, className = "", hideLabel = "Hide
                   <span className="truncate text-xs text-ink-400" title={s.artist}>{s.artist}</span>
                 </span>
               </span>
-              <span className="mt-2 flex-1 text-xs leading-snug text-ink-300">{why[s.why] ?? s.why}</span>
+              <span className="mt-2 flex-1 text-xs leading-snug text-ink-300">{t(s.why, s.why)}</span>
               <span className="mt-2 flex gap-1.5 text-[11px]">
                 <span className="text-ink-500">{t("sing.in")}</span><Out href={spotifySearch(s.artist, s.title)} label="Spotify" />
                 <span className="text-ink-600">·</span>
