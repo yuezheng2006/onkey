@@ -7,6 +7,7 @@ import { dismissTimingHint, finishTake, learnOf, learnPct, live, playTrack, setB
 import { typing } from "@/lib/keys";
 import { clock, fold } from "@/lib/music";
 import { setDancer, useDancer } from "@/components/Dancer";
+import { useI18n } from "@/lib/i18n";
 
 /** Re-render a component every `ms` (for things derived from the live clock), only while the clock runs (see
  *  live.playing): paused, finished, nothing playing or the window hidden, once more and then no timer at all. */
@@ -107,6 +108,7 @@ function lineEnd(song: NonNullable<typeof live.song>, i: number) {
 }
 
 export function Lyrics({ compact = false }: { compact?: boolean }) {
+  const { t: translate } = useI18n();
   useTick(80);
   const song = live.song;
   if (!song) return null;
@@ -115,13 +117,13 @@ export function Lyrics({ compact = false }: { compact?: boolean }) {
   // the line (and the next-line preview) changes LINE_LEAD s before it's sung; its words still fill on the singing
   const i = live.lyricIndex(t);
   const cur = i >= 0 ? lyr[i] : null, next = lyr[i + 1];
-  if (!lyr.length) return <p className={`text-center text-sm text-ink-400 ${compact ? "truncate" : ""}`}>{live.lyricsOn ? "No synced lyrics for this song" : "Lyrics are off (Settings)"}</p>;
+  if (!lyr.length) return <p className={`text-center text-sm text-ink-400 ${compact ? "truncate" : ""}`}>{live.lyricsOn ? translate("live.noLyrics") : translate("live.lyricsOff")}</p>;
   // the place in the song isn't settled yet: a calm wait rather than words that then jump (see live.placeReady)
   const perf = perfNow();
   if (!live.placeReady(perf)) return (
     <div className={compact ? "min-w-0 text-left" : "mx-auto max-w-4xl px-6 text-center"}>
       <div className={compact ? "" : "flex min-h-[2lh] items-end justify-center text-[clamp(1.4rem,2.6vw,2.2rem)] leading-tight"}>
-        <p className={`font-medium tracking-tight text-ink-500 ${compact ? "text-sm" : "text-[0.7em]"}`}>Finding your place…</p>
+        <p className={`font-medium tracking-tight text-ink-500 ${compact ? "text-sm" : "text-[0.7em]"}`}>{translate("live.findingPlace")}</p>
       </div>
       {!compact && <p className="mt-1 min-h-[1.5rem] text-base text-ink-400">{" "}</p>}
     </div>
@@ -152,7 +154,7 @@ export function Lyrics({ compact = false }: { compact?: boolean }) {
             </p>
           ) : (
             <p className={`font-medium tracking-tight text-ink-500 ${compact ? "text-sm" : "text-[0.7em]"}`}>
-              ♪ <span className="tabular">{cur ? "Next line" : "First line"} in {Math.ceil(wait)} s</span>
+              ♪ <span className="tabular">{cur ? translate("live.nextLine") : translate("live.firstLine")} in {Math.ceil(wait)} s</span>
             </p>
           )}
         </div>
@@ -191,13 +193,14 @@ export function Lyrics({ compact = false }: { compact?: boolean }) {
 
 // ------------------------------------------------------------------ score + hint
 export function ScoreAndHint() {
+  const { t } = useI18n();
   const { score, song, blind } = useSession();
   const hint = useHint();
   if (song?.mode === "learn" || blind) {
     return (
       <div className="text-right">
-        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">Score</div>
-        <div className="text-sm font-medium text-ink-300">after the song</div>
+        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">{t("live.score")}</div>
+        <div className="text-sm font-medium text-ink-300">{t("live.afterSong")}</div>
       </div>
     );
   }
@@ -208,7 +211,7 @@ export function ScoreAndHint() {
         {hint === "ok" ? "✓ On pitch" : hint === "up" ? "▲ Sing higher" : hint === "down" ? "▼ Sing lower" : "·"}
       </div>
       <div className="text-right">
-        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">Score</div>
+        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">{t("live.score")}</div>
         <div className="tabular text-3xl font-bold leading-none tracking-tight">{score ?? "–"}</div>
       </div>
     </div>
@@ -440,6 +443,7 @@ export function SongClock() {
 /** After the last lyric line: finish the play now and see the score (people often move on before the song's
  *  end, and a play only counts once it's finished). */
 export function FinishSong() {
+  const { t: translate } = useI18n();
   useTick(500);
   const song = live.song;
   const lines = (song?.lyrics ?? []).filter(([, text]) => text.trim());
@@ -453,15 +457,16 @@ export function FinishSong() {
     <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
       <button onClick={() => finishTake()}
               className="pointer-events-auto glass flex animate-rise items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-ink-100 shadow-lg shadow-black/40 transition hover:border-accent-400/40 hover:text-white">
-        That was the last line
+        {translate("live.finishLast")}
         <span className="text-ink-500">·</span>
-        <span className="text-accent-300">Finish and see your score</span>
+        <span className="text-accent-300">{translate("live.finishScore")}</span>
       </button>
     </div>
   );
 }
 
 export function SkipToSinging() {
+  const { t } = useI18n();
   useTick(250);
   const lull = live.lull(live.frozenPerf ?? performance.now());
   if (!lull || lull.wait < 6) return null;
@@ -469,9 +474,9 @@ export function SkipToSinging() {
     <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
       <button onClick={() => skipToSinging()}
               className="pointer-events-auto glass flex animate-rise items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-ink-100 shadow-lg shadow-black/40 transition hover:border-accent-400/40 hover:text-white">
-        Singing in {Math.ceil(lull.wait)}s
+        {t("live.singingIn")} {Math.ceil(lull.wait)}s
         <span className="text-ink-500">·</span>
-        <span className="text-accent-300">Skip ahead</span>
+        <span className="text-accent-300">{t("live.skipAhead")}</span>
         <Icon d={ICONS.next} size={14} />
       </button>
     </div>
