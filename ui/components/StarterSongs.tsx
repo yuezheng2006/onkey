@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { sizedArt, spotifySearch } from "@/components/Cover";
 import { getSettings, inApp, openLink, setSetting } from "@/lib/session";
+import { useI18n } from "@/lib/i18n";
 
 /** The OnKey starter playlist, public, for the first card ("Play the OnKey starter playlist"). Paste its share link
  *  here: a Spotify playlist (https://open.spotify.com/playlist/<id>) and/or an Apple Music one
@@ -134,13 +135,14 @@ function StarterArt({ title, artist, cover, size = 44 }: { title: string; artist
 /** "Play the OnKey starter playlist": opens it in the Spotify app (or Apple Music), where OnKey hears it. (Not
  *  the services' embedded players: those played inside OnKey's own window, which OnKey doesn't listen to.) */
 function PlaylistStrip() {
+  const { t } = useI18n();
   const href = STARTER_PLAYLIST_URL || STARTER_PLAYLIST_APPLE_URL;
   const app = STARTER_PLAYLIST_URL ? "Spotify" : "Apple Music";
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-accent-400/25 bg-accent-500/10 px-4 py-3">
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium text-ink-100">Play the OnKey starter playlist</span>
-        <span className="block text-xs text-ink-300">All of these and more, from easy to challenging: press play and sing</span>
+        <span className="block text-sm font-medium text-ink-100">{t("sing.playlist")}</span>
+        <span className="block text-xs text-ink-300">{t("sing.playlistHint")}</span>
       </span>
       {STARTER_PLAYLIST_URL && STARTER_PLAYLIST_APPLE_URL && (
         <Out href={STARTER_PLAYLIST_APPLE_URL} label="or Apple Music" dim title="Open the playlist in Apple Music" />
@@ -148,20 +150,31 @@ function PlaylistStrip() {
       <a href={href} onClick={open(href)} title={`Open the playlist in ${app}`}
          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-accent-500 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-accent-400">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M7 4.5v15l13-7.5z" /></svg>
-        Play in {app}
+        {t("sing.playIn")} {app}
       </a>
     </div>
   );
 }
 
 export default function StarterSongs({ onHide, className = "", hideLabel = "Hide suggestions" }: { onHide: () => void; className?: string; hideLabel?: string }) {
+  const { t } = useI18n();
+  const why: Record<string, string> = {
+    "Easy: a steady, simple melody": "简单：旋律稳定清晰",
+    "The singalong everyone knows": "大家都熟悉的跟唱歌曲",
+    "Low and steady, easy to follow": "音域较低、节奏稳定，容易跟唱",
+    "Long held notes to hold steady": "长音练习，保持音准稳定",
+    "Gentle verses, big chorus": "主歌舒缓，副歌有挑战",
+    "One clear voice, a chorus that lifts": "人声清晰，副歌逐渐升高",
+    "Slow and expressive: great for pitch": "速度较慢、情感丰富，适合练音准",
+    "The challenge: huge range": "挑战：音域跨度很大",
+  };
   const playlist = !!(STARTER_PLAYLIST_URL || STARTER_PLAYLIST_APPLE_URL);
   const found = useStarterCovers();
   return (
-    <section aria-label="Songs to try" className={`w-full text-left ${className}`}>
+    <section aria-label={t("sing.songsToTry")} className={`w-full text-left ${className}`}>
       <div className="mb-2 flex items-baseline justify-between gap-3 px-1 text-xs">
-        <span className="font-medium text-ink-300">Try these <span className="font-normal text-ink-500">· songs OnKey follows well</span></span>
-        <button onClick={onHide} className="text-ink-500 transition hover:text-ink-200">{hideLabel}</button>
+        <span className="font-medium text-ink-300">{t("sing.tryThese")} <span className="font-normal text-ink-500">{t("sing.followsWell")}</span></span>
+        <button onClick={onHide} className="text-ink-500 transition hover:text-ink-200">{hideLabel === "Hide suggestions" ? t("sing.hideSuggestions") : hideLabel}</button>
       </div>
       <ul className="flex snap-x gap-2 overflow-x-auto pr-8 pb-2 [scrollbar-width:thin] [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]">
         {STARTER_SONGS.map(s => {
@@ -175,9 +188,9 @@ export default function StarterSongs({ onHide, className = "", hideLabel = "Hide
                   <span className="truncate text-xs text-ink-400" title={s.artist}>{s.artist}</span>
                 </span>
               </span>
-              <span className="mt-2 flex-1 text-xs leading-snug text-ink-300">{s.why}</span>
+              <span className="mt-2 flex-1 text-xs leading-snug text-ink-300">{why[s.why] ?? s.why}</span>
               <span className="mt-2 flex gap-1.5 text-[11px]">
-                <span className="text-ink-500">in</span><Out href={spotifySearch(s.artist, s.title)} label="Spotify" />
+                <span className="text-ink-500">{t("sing.in")}</span><Out href={spotifySearch(s.artist, s.title)} label="Spotify" />
                 <span className="text-ink-600">·</span>
                 {cover?.link ? <Out href={cover.link} label="Apple Music" dim title="Open it in Apple Music" />
                   : <Out href={appleSearch(s.artist, s.title)} label="Apple Music" dim />}
