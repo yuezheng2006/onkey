@@ -7,9 +7,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getMics, setupControl, setupDone, setupLevel, setupMeter, setupOpenSettings, setupRequest, setupStatus, type AppPerm, type AskAnswer, type Perm, type SetupStatus } from "@/lib/session";
 import { useI18n } from "@/lib/i18n";
 
-const STEPS = ["Welcome", "Permissions", "Music apps", "Mic check", "Ready"] as const;
+const STEPS = ["setup.stepWelcome", "setup.stepPermissions", "setup.stepMusic", "setup.stepMic", "setup.stepReady"] as const;
 
 export default function Setup({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const [step, setStep] = useState(0);
   const [st, setSt] = useState<SetupStatus | null>(null);
   const [audioOk, setAudioOk] = useState(false);        // the tap was allowed when we asked (status may say "unknown")
@@ -28,12 +29,12 @@ export default function Setup({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink-950/90 px-6">
-      <div className="glass w-full max-w-lg animate-rise rounded-3xl px-8 pt-7 pb-6 shadow-2xl shadow-black/50" role="dialog" aria-label="Set up OnKey">
-        <ol className="mb-6 flex items-center gap-2" aria-label="Setup steps">
+      <div className="glass w-full max-w-lg animate-rise rounded-3xl px-8 pt-7 pb-6 shadow-2xl shadow-black/50" role="dialog" aria-label={t("setup.welcome")}>
+        <ol className="mb-6 flex items-center gap-2" aria-label={t("setup.permissions")}>
           {STEPS.map((s, i) => (
             <li key={s} className="flex flex-1 flex-col gap-1.5">
               <span className={`h-1 rounded-full transition-colors ${i <= step ? "bg-accent-400" : "bg-white/8"}`} />
-              <span className={`text-[11px] ${i === step ? "text-ink-200" : "text-ink-500"}`}>{s}</span>
+              <span className={`text-[11px] ${i === step ? "text-ink-200" : "text-ink-500"}`}>{t(s)}</span>
             </li>
           ))}
         </ol>
@@ -73,18 +74,18 @@ function Welcome({ macosOk, onNext, onLater }: { macosOk: boolean; onNext: () =>
       <p className="mt-2 text-ink-300">{t("setup.tagline")}</p>
       <ul className="mt-5 space-y-3 text-sm leading-relaxed text-ink-200">
         <Point icon="M9 18V6l11-2v12M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z">
-          Play a song in your music app, as you always do. OnKey listens to the music playing on your Mac and follows along by itself.
+          {t("setup.pointPlay")}
         </Point>
         <Point icon="M3 14c2.5 0 2.5-6 5-6s2.5 8 5 8 2.5-10 5-10 2 4 3 4">
-          The first time a song plays, OnKey learns the singer’s melody. From then on you see every note coming, and where you’re sharp or flat.
+          {t("setup.pointLearn")}
         </Point>
         <Point icon="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z">
-          OnKey never saves the music it listens to. Your singing recordings stay on this Mac so you can hear your takes back. To name a new song, listening mode sends Apple’s Shazam a short fingerprint of the music app’s sound (not the audio).
+          {t("setup.pointPrivacy")}
         </Point>
       </ul>
       {!macosOk && (
         <p className="mt-5 rounded-xl bg-close/10 px-4 py-3 text-sm text-close">
-          OnKey needs macOS 14.2 or later to hear other apps. Update macOS in System Settings → General → Software Update.
+          {t("setup.macosUnsupported")}
         </p>
       )}
       <div className="mt-7 flex items-center justify-between">
@@ -121,20 +122,20 @@ function Permissions({ mic, audio, onAudioAllowed, refresh, onNext, canContinue 
   return (
     <>
       <h2 className="text-2xl font-semibold tracking-tight">{t("setup.permissions")}</h2>
-      <p className="mt-2 text-sm text-ink-300">macOS asks once for each. You can change them later in System Settings → Privacy &amp; Security.</p>
+      <p className="mt-2 text-sm text-ink-300">{t("setup.permissionsHint")}</p>
       <div className="mt-5 space-y-3">
-        <PermRow title="Microphone" why="To hear you sing." state={mic} busy={asking === "mic"}
+        <PermRow title={t("setup.micTitle")} why={t("setup.micWhy")} state={mic} busy={asking === "mic"}
                  onAsk={() => ask("mic")} onSettings={() => setupOpenSettings("mic")}
-                 settingsHint="Turn on OnKey under Microphone." />
-        <PermRow title="System audio recording" why="To hear the music playing on your Mac, so OnKey can learn the melody. OnKey never saves the music or sends it; to name a song it doesn't know, a short fingerprint of it (not the audio) can go to Apple's Shazam."
+                 settingsHint={t("setup.micHint")} />
+        <PermRow title={t("setup.audioTitle")} why={t("setup.audioWhy")}
                  state={audio} busy={asking === "audio"} onAsk={() => ask("audio")} onSettings={() => setupOpenSettings("audio")}
-                 settingsHint="Open Screen & System Audio Recording and turn on OnKey under System Audio Recording Only." />
+                 settingsHint={t("setup.audioHint")} />
       </div>
       <p className="mt-4 text-xs leading-relaxed text-ink-500">
-        If macOS asks to quit and reopen OnKey after you allow something, do. Setup carries on where you left off.
+        {t("setup.restartHint")}
       </p>
       <div className="mt-6 flex items-center justify-between">
-        <Quiet onClick={onNext}>{canContinue ? "" : "Skip for now"}</Quiet>
+        <Quiet onClick={onNext}>{canContinue ? "" : t("setup.skipForNow")}</Quiet>
         <Primary onClick={onNext} disabled={!canContinue}>{t("setup.continue")}</Primary>
       </div>
     </>
@@ -217,27 +218,26 @@ function MusicApps({ st, refresh, onNext }: { st: SetupStatus | null; refresh: (
   return (
     <>
       <div className="flex items-center gap-2">
-        <h2 className="text-2xl font-semibold tracking-tight">Let OnKey follow Spotify and Apple Music</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">{t("setup.musicTitle")}</h2>
       </div>
       <span className="mt-2 inline-block rounded-full bg-accent-500/14 px-2 py-0.5 text-[11px] font-medium text-accent-300">{t("setup.recommended")}</span>
       <p className="mt-3 text-sm text-ink-300">
-        So lyrics and notes are in the right place from the first second, and OnKey can play and restart songs for you.
+        {t("setup.musicDesc")}
       </p>
       <p className="mt-2 text-xs leading-relaxed text-ink-500">
-        It can read what’s playing and where, and play, pause and seek. Nothing else. macOS asks once for each app.
+        {t("setup.musicRead")}
       </p>
       <div className="mt-5 space-y-2">
         {apps.filter(([, p]) => p !== "not_installed").map(([app, p]) => <AppRow key={app} app={app} state={p} />)}
       </div>
       {chose === "asking" && slow && (
         <p className="mt-4 text-xs leading-relaxed text-ink-400" role="status">
-          Waiting for macOS. If it’s asking about Spotify or Apple Music (its question can open behind this window), answer it.
-          No question? Carry on: macOS asks the first time you play a song there.
+          {t("setup.musicWaiting")}
         </p>
       )}
       {waiting && (
         <p className="mt-4 text-xs leading-relaxed text-ink-400" role="status">
-          macOS hasn’t had an answer yet. If its question is showing, answer it; otherwise it asks the first time you play a song there.
+          {t("setup.musicNoAnswer")}
         </p>
       )}
       <div className="mt-6 flex items-center justify-between">
@@ -259,8 +259,8 @@ function AppRow({ app, state }: { app: string; state?: AskAnswer }) {
   const { t } = useI18n();
   const granted = state === "granted";
   const denied = state === "denied";
-  const label = granted ? t("setup.allowed") : denied ? "Not allowed" : state === "not_running" ? "macOS asks when you first play a song in it"
-    : state === "waiting" ? "No answer yet" : state === "ask" ? "Not asked yet" : "";
+  const label = granted ? t("setup.allowed") : denied ? t("setup.notAllowed") : state === "not_running" ? t("setup.askOnPlay")
+    : state === "waiting" ? t("setup.noAnswer") : state === "ask" ? t("setup.notAsked") : "";
   return (
     <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${granted ? "border-good/25 bg-good/5" : "border-white/8 bg-white/3"}`}>
       <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${granted ? "bg-good/20 text-good" : denied ? "bg-off/15 text-off" : "bg-white/8 text-ink-400"}`} aria-hidden>
@@ -320,24 +320,22 @@ function MicCheck({ micOk, onNext, onBack }: { micOk: boolean; onNext: () => voi
     <>
       <h2 className="text-2xl font-semibold tracking-tight">{t("setup.canHear")}</h2>
       <p className="mt-2 text-sm text-ink-300">
-        {!micOk ? "OnKey needs the microphone first: go back to allow it."
-          : device === null ? "No microphone is connected. Connect one, or choose one in System Settings → Sound → Input."
-          : "Say something, or sing a note."}
+        {!micOk ? t("setup.micBack") : device === null ? t("setup.noMic") : t("setup.saySomething")}
       </p>
-      {micOk && device && <p className="mt-1 text-xs text-ink-500">Listening to {device}. You can choose another in Settings.</p>}
+      {micOk && device && <p className="mt-1 text-xs text-ink-500">{t("setup.listeningTo")} {device}。{t("setup.chooseSettings")}</p>}
       <div className="mt-6 flex items-center gap-4">
         <div className="h-3 flex-1 overflow-hidden rounded-full bg-white/6" role="meter" aria-label="Microphone level" aria-valuemin={-80} aria-valuemax={-10} aria-valuenow={Math.round(db)}>
           <div className={`h-full rounded-full transition-[width] duration-75 ${heard ? "bg-good" : "bg-accent-400"}`} style={{ width: `${pct * 100}%` }} />
         </div>
         <span className={`w-28 text-right text-sm font-medium ${heard ? "text-good" : "text-ink-500"}`}>
-          {heard ? "Heard you" : running ? "Listening…" : !micOk ? "Not allowed" : !failed && device !== null ? "Starting…" : "No microphone"}
+          {heard ? t("setup.heardYou") : running ? t("setup.listening") : !micOk ? t("setup.notAllowedShort") : !failed && device !== null ? t("setup.starting") : t("setup.noMicrophone")}
         </span>
       </div>
       <p className="mt-4 text-xs leading-relaxed text-ink-500">
-        Headphones give the steadiest scores. Laptop speakers work too: OnKey takes the music out of what the mic hears.
+        {t("setup.micAdvice")}
       </p>
       <div className="mt-7 flex items-center justify-between">
-        <Quiet onClick={onNext}>{heard ? "" : "Skip"}</Quiet>
+        <Quiet onClick={onNext}>{heard ? "" : t("setup.skip")}</Quiet>
         {micOk ? <Primary onClick={onNext} disabled={!heard}>{t("setup.continue")}</Primary>
           : <Primary onClick={onBack}>{t("setup.back")}</Primary>}
       </div>
@@ -354,11 +352,10 @@ function Ready({ onFinish }: { onFinish: () => void }) {
       </div>
       <h2 className="text-center text-2xl font-semibold tracking-tight">{t("setup.ready")}</h2>
       <p className="mx-auto mt-2 max-w-sm text-center text-ink-300">
-        Play a song in your music app and start singing. The first play of each song teaches OnKey the melody.
+        {t("setup.readyDesc")}
       </p>
       <p className="mx-auto mt-3 max-w-sm text-center text-sm text-ink-400">
-        Sing at a comfortable volume: OnKey scores your pitch, not how loud you are. Rest when your voice tires, and stop
-        if your throat hurts.
+        {t("setup.readyAdvice")}
       </p>
       <div className="mt-7 flex justify-center">
         <Primary onClick={onFinish}>{t("setup.startSinging")}</Primary>
