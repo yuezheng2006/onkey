@@ -72,7 +72,8 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>("en");
   useEffect(() => {
     const saved = localStorage.getItem("onkey.locale") as Locale | null;
-    const initial = saved === "zh" || saved === "en" ? saved : (navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
+    // Chinese is the product default; users can switch to English from the nav and the choice is persisted.
+    const initial = saved === "zh" || saved === "en" ? saved : "zh";
     setLocaleState(initial);
   }, []);
   const setLocale = (next: Locale) => { setLocaleState(next); localStorage.setItem("onkey.locale", next); };
