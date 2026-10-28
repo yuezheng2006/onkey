@@ -184,6 +184,7 @@ function StatusLine({ line }: { line: Line }) {
  *  far it's got, as a thin bar that moves only when the engine reports (see LearnBar). The song being learned is
  *  the one shown; one waiting behind it (one is learned at a time) is only counted. */
 function LearningLine({ jobs, className = "" }: { jobs: LearnJob[]; className?: string }) {
+  const { t } = useI18n();
   const after = jobs.filter(j => j.fraction != null);
   if (!after.length) return null;
   const j = after.find(a => a.stage !== "queued") ?? after[0], pct = learnPct(j);
@@ -192,8 +193,8 @@ function LearningLine({ jobs, className = "" }: { jobs: LearnJob[]; className?: 
          title={after.length > 1 ? after.map(a => a.name).join(", ") : undefined}>
       <div className="flex items-baseline gap-1.5">
         {pct == null
-          ? <span className="truncate text-ink-300">Waiting to learn <span className="text-ink-100">{j.name}</span></span>
-          : <span className="truncate text-ink-300">Learning <span className="text-ink-100">{j.name}</span>: {learnStage(j).toLowerCase()}</span>}
+          ? <span className="truncate text-ink-300">{t("live.waitingToLearn")} <span className="text-ink-100">{j.name}</span></span>
+          : <span className="truncate text-ink-300">{t("live.learning")} <span className="text-ink-100">{j.name}</span>: {learnStage(j).toLowerCase()}</span>}
         <span className="tabular ml-auto shrink-0 text-ink-400">{after.length > 1 ? `+${after.length - 1}` : ""}{after.length > 1 && pct != null ? " · " : ""}{pct != null ? `${pct}%` : ""}</span>
       </div>
       <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-white/8">
@@ -480,11 +481,12 @@ function Notice({ title, action, onClose, children }: { title: string; action?: 
 }
 
 function Ended({ takes }: { takes: { name: string; artist: string; score: number | null; report: string | null }[] }) {
+  const { t } = useI18n();
   return (
     <div className="absolute inset-0 grid place-items-center bg-ink-950/90 p-6">
       <div className="w-full max-w-md animate-rise text-center">
-        <h2 className="text-2xl font-semibold tracking-tight">Session finished</h2>
-        <p className="mt-1 text-ink-300">{takes.length ? "Here’s how you did." : "No takes long enough to score this time."}</p>
+        <h2 className="text-2xl font-semibold tracking-tight">{t("live.sessionFinished")}</h2>
+        <p className="mt-1 text-ink-300">{takes.length ? t("live.howDid") : t("live.noTakes")}</p>
         <div className="mt-6 space-y-2 text-left">
           {takes.map((t, i) => (
             <Link key={i} href={t.report ? `/take?id=${encodeURIComponent(t.report)}` : "/history"}
@@ -530,6 +532,7 @@ function NeedsPermission({ app }: { app: string }) {
  *  rounded card floating above other apps. Drag it anywhere (text doesn't catch the mouse, so the whole card
  *  is a handle); the button opens the full window again. */
 function Mini({ onExpand }: { onExpand: () => void }) {
+  const { t } = useI18n();
   const { song, score } = useSession();
   const dancerOn = useDancer();
   // the dancer can be hidden from this card alone (the full window's switch is separate), remembered
@@ -549,11 +552,11 @@ function Mini({ onExpand }: { onExpand: () => void }) {
         <div data-tauri-drag-region className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
           <div data-tauri-drag-region className="flex items-center gap-3">
             <div className="pointer-events-none min-w-0 flex-1">
-              {song ? <Lyrics compact /> : <p className="text-sm text-ink-400">Play a song in Spotify or Apple Music</p>}
+              {song ? <Lyrics compact /> : <p className="text-sm text-ink-400">{t("live.playSong")}</p>}
             </div>
             <div className="pointer-events-none text-right">
               <div className="tabular text-xl font-bold leading-none">{song?.mode === "learn" ? "–" : score ?? "–"}</div>
-              <div className="text-[9px] uppercase tracking-wider text-ink-500">score</div>
+              <div className="text-[9px] uppercase tracking-wider text-ink-500">{t("live.scoreLower")}</div>
             </div>
           </div>
         </div>

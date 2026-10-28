@@ -307,6 +307,7 @@ export function TakesTray() {
   );
 }
 function TakeChip({ t }: { t: Take }) {
+  const { t: translate } = useI18n();
   const learning = t.status === "learning";
   const { learning: jobs } = useSession();
   // how far its learning has got (src-tauri/src/progress.rs)
@@ -320,16 +321,16 @@ function TakeChip({ t }: { t: Take }) {
         {t.mode === "learn" || t.blind ? "blind · " : ""}{t.notes_total ? `${t.notes_hit}/${t.notes_total} notes` : "view"} →
       </div>
     </>
-  ) : t.status === "failed" ? <div className="text-xs text-off">couldn’t score</div>
+  ) : t.status === "failed" ? <div className="text-xs text-off">{translate("live.couldntScore")}</div>
     : readyOnly ? (
       t.status === "learned" && t.track_id ? (
         <button onClick={e => { e.preventDefault(); playTrack(t.track_id!); }}
-                className="rounded-full bg-accent-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-accent-400">Sing now</button>
-      ) : <div className="text-right text-[11px] text-ink-300">{Math.round(100 * (t.learned ?? 0))}% learned<br /><span className="text-ink-400">play it through</span></div>
+                className="rounded-full bg-accent-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-accent-400">{translate("live.singNow")}</button>
+      ) : <div className="text-right text-[11px] text-ink-300">{Math.round(100 * (t.learned ?? 0))}{translate("live.learnedPct")}<br /><span className="text-ink-400">{translate("live.playThrough")}</span></div>
     ) : (
       <>
         <div className="tabular text-sm font-semibold text-ink-300">{learning ? "" : t.live != null ? Math.round(t.live) : "–"}</div>
-        <div className="tabular text-[10px] text-ink-400">{pct != null ? `learning… ${pct}%` : job?.stage === "queued" ? "waiting to learn" : learning ? "learning…" : "scoring…"}</div>
+        <div className="tabular text-[10px] text-ink-400">{pct != null ? `${translate("live.learning")} ${pct}%` : job?.stage === "queued" ? translate("live.waitingToLearn") : learning ? translate("live.learning") : translate("live.scoring")}</div>
       </>
     );
   const inner = (
@@ -337,7 +338,7 @@ function TakeChip({ t }: { t: Take }) {
       {(learning || t.status === "scoring") && pct == null && <div className="shimmer absolute inset-0" />}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{t.name}</div>
-        <div className="truncate text-xs text-ink-400">{t.status === "learned" ? "Learned · ready to sing" : t.artist}</div>
+        <div className="truncate text-xs text-ink-400">{t.status === "learned" ? translate("live.learnedReady") : t.artist}</div>
       </div>
       <div className="relative text-right">{right}</div>
       {pct != null && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/6">
@@ -366,22 +367,23 @@ function TimingHint({ uid, name }: { uid: string; name: string }) {
 }
 
 export function StatusChips() {
+  const { t } = useI18n();
   const { status, connected } = useSession();
   const out = status.output_ms ?? 0;
   const chip = "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-ink-300";
   return (
     <div className="flex flex-wrap items-center gap-1">
       <span className={chip} title="Connection to the engine">
-        <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-off"}`} />{connected ? "Live" : "Reconnecting"}
+        <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-off"}`} />{connected ? t("live.live") : t("live.reconnecting")}
       </span>
       <span className={chip} title={`How long after the music app plays you hear it; scoring allows for it${status.output?.correction_ms != null ? " (from your timing check in Settings)" : ""}`}>
-        <Icon d={ICONS.head} size={14} />{(status.output?.reported_ms ?? out) > 100 ? "Bluetooth" : "Wired / speakers"} · {out} ms
+        <Icon d={ICONS.head} size={14} />{(status.output?.reported_ms ?? out) > 100 ? t("live.bluetooth") : t("live.wired")} · {out} ms
       </span>
       {TIMING_CHECK_VERIFIED && status.output?.suggest && <TimingHint uid={status.output.uid} name={status.output.name} />}
       {status.mic_device !== undefined && (
         <Link href="/settings" title="The microphone OnKey listens to (choose another in Settings)"
               className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${status.mic_device === null ? "text-amber-200" : "text-ink-300"}`}>
-          <Icon d={ICONS.mic} size={14} /><span className="max-w-44 truncate">{status.mic_device ?? "No microphone"}</span>
+          <Icon d={ICONS.mic} size={14} /><span className="max-w-44 truncate">{status.mic_device ?? t("live.noMicrophone")}</span>
         </Link>
       )}
     </div>
@@ -391,6 +393,7 @@ export function StatusChips() {
 /** The switches while singing, at the bottom right (status stays at the left, so each fits on one line on a laptop):
  *  Notes ahead, Echo cancel, and Dancer (under the dancer). */
 export function SingSwitches() {
+  const { t } = useI18n();
   const { status, song, blind } = useSession();
   return (
     <div className="flex flex-wrap items-center justify-end gap-1">
@@ -400,7 +403,7 @@ export function SingSwitches() {
           <span className={`relative h-4 w-7 rounded-full transition ${blind ? "bg-ink-500" : "bg-accent-500"}`}>
             <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${blind ? "left-0.5" : "left-3.5"}`} />
           </span>
-          Notes ahead
+          {t("live.notesAhead")}
         </button>
       )}
       {status.echo_cancel != null && (
@@ -410,7 +413,7 @@ export function SingSwitches() {
           <span className={`relative h-4 w-7 rounded-full transition ${status.echo_cancel ? "bg-accent-500" : "bg-ink-500"}`}>
             <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${status.echo_cancel ? "left-3.5" : "left-0.5"}`} />
           </span>
-          Echo cancel
+          {t("live.echoCancel")}
         </button>
       )}
       {song?.mode === "sing" && <DancerToggle />}
@@ -420,6 +423,7 @@ export function SingSwitches() {
 
 /** The Dancer switch, at the bottom right under the dancer (app/page.tsx), while a learned song is sung. */
 export function DancerToggle() {
+  const { t } = useI18n();
   const on = useDancer();
   return (
     <button onClick={() => setDancer(!on)} title="A stick figure dancing to the song while you sing"
@@ -427,7 +431,7 @@ export function DancerToggle() {
       <span className={`relative h-4 w-7 rounded-full transition ${on ? "bg-accent-500" : "bg-ink-500"}`}>
         <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${on ? "left-3.5" : "left-0.5"}`} />
       </span>
-      Dancer
+      {t("live.dancer")}
     </button>
   );
 }
@@ -522,6 +526,7 @@ export function PitchStrip() {
 /** When a take has been scored (or a song learned): a small notice that fades after a few seconds. The takes
  *  themselves live in History. */
 export function TakeToast() {
+  const { t } = useI18n();
   const { takes } = useSession();
   const seen = useRef<number | null>(null);
   const [shown, setShown] = useState<Take | null>(null);
@@ -538,8 +543,8 @@ export function TakeToast() {
   if (!shown) return null;
   const body = shown.status === "done"
     ? <><span className="tabular text-lg font-bold text-white">{shown.score}</span>
-        {shown.report && <Link href={`/take?id=${encodeURIComponent(shown.report)}`} className="text-accent-300 hover:text-white">View</Link>}</>
-    : <span className="text-good">Learned · notes ready next time</span>;
+        {shown.report && <Link href={`/take?id=${encodeURIComponent(shown.report)}`} className="text-accent-300 hover:text-white">{t("live.view")}</Link>}</>
+    : <span className="text-good">{t("live.learnedReady")}</span>;
   return (
     <div className="glass flex min-w-0 animate-rise items-center gap-3 rounded-2xl px-4 py-2 text-sm shadow-lg shadow-black/30">
       <span className="min-w-0 truncate text-ink-200">{shown.name}</span>
