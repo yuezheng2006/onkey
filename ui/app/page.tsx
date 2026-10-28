@@ -434,6 +434,7 @@ function NotASong({ id, name }: { id: string; name: string }) {
 }
 
 function SpeakerHint({ id }: { id: string }) {
+  const { t } = useI18n();
   const [shown, setShown] = useState(false);
   useEffect(() => {
     if (speakerHinted.has(id)) return;
@@ -452,10 +453,10 @@ function SpeakerHint({ id }: { id: string }) {
     <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-6">
       <div role="status" className="glass pointer-events-auto w-full max-w-md animate-rise rounded-2xl px-4 py-3 shadow-2xl shadow-black/40">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-sm text-ink-200">OnKey can’t hear you over the music. If you’re singing, turn it down a little or use headphones for a fair score.</p>
+          <p className="text-sm text-ink-200">{t("sing.speakerHint")}</p>
           <button onClick={() => setShown(false)} aria-label="Dismiss" className="-mr-1 shrink-0 rounded-md px-1.5 text-ink-400 transition hover:text-ink-100">×</button>
         </div>
-        <button onClick={never} className="mt-1.5 text-xs text-ink-400 underline-offset-2 transition hover:text-ink-200 hover:underline">Don’t show again</button>
+        <button onClick={never} className="mt-1.5 text-xs text-ink-400 underline-offset-2 transition hover:text-ink-200 hover:underline">{t("sing.speakerHintHide")}</button>
       </div>
     </div>
   );
