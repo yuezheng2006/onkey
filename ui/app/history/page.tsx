@@ -10,6 +10,7 @@ import LearnBar from "@/components/LearnBar";
 import { deleteTake, getLibrary, getTakes, learnLabel, learnOf, live, playTrack, setFavorite, useLearn, useSession, type TakeSummary } from "@/lib/session";
 import { scoreWord, when } from "@/lib/music";
 import Trend from "@/components/Trend";
+import { useI18n } from "@/lib/i18n";
 
 const TREND = "#8a78ff";   // validated for the dark surface (same as the chart in components/Trend)
 
@@ -18,6 +19,7 @@ const TREND = "#8a78ff";   // validated for the dark surface (same as the chart 
 const songKey = (t: { name: string; artist: string }) => `${t.artist}\u0000${t.name}`.toLowerCase().replace(/[\s!-/:-@[-`{-~]/g, "");
 
 export default function History() {
+  const { t } = useI18n();
   const [takes, setTakes] = useState<TakeSummary[] | null>(null);
   // takes from this session still being scored or learned; the saved list reloads as each one finishes
   useEffect(() => { live.start(); }, []);
@@ -70,8 +72,8 @@ export default function History() {
       <header data-tauri-drag-region className="app-header flex items-center gap-5 px-6 pt-4 pb-3"><Logo /><Nav /></header>
       <main className="mx-auto max-w-6xl px-6 pb-16">
         <div className="mt-6 mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight">Your singing</h1>
-          <p className="mt-1 text-ink-300">Every song you sing becomes a take. Here’s how they’re going.</p>
+          <h1 className="text-3xl font-semibold tracking-tight">{t("history.title")}</h1>
+          <p className="mt-1 text-ink-300">{t("history.subtitle")}</p>
         </div>
 
         {pending.length > 0 && (
@@ -104,14 +106,14 @@ export default function History() {
 
             <section className="glass mt-4 rounded-3xl p-5">
               <div className="mb-3 flex items-baseline justify-between">
-                <h2 className="text-sm font-medium text-ink-200">Score per take</h2>
+                <h2 className="text-sm font-medium text-ink-200">{t("history.scorePerTake")}</h2>
                 <span className="text-xs text-ink-400">oldest → newest</span>
               </div>
               <Trend takes={real.slice().reverse()} />
             </section>
 
             <section className="mt-8">
-              <h2 className="mb-3 text-sm font-medium text-ink-200">Songs</h2>
+              <h2 className="mb-3 text-sm font-medium text-ink-200">{t("history.songs")}</h2>
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {songs.map(s => <SongCard key={s.track.id} s={s} onDelete={() => remove(s.takes.map(t => t.id))}
                                           fav={hearted(s.track)} onFav={on => heart(s.track, on)} />)}
@@ -119,7 +121,7 @@ export default function History() {
             </section>
 
             <section className="mt-8">
-              <h2 className="mb-3 text-sm font-medium text-ink-200">All takes</h2>
+              <h2 className="mb-3 text-sm font-medium text-ink-200">{t("history.allTakes")}</h2>
               <div className="glass overflow-hidden rounded-3xl">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs text-ink-400">

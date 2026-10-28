@@ -4,8 +4,10 @@
 // allow control of that app (macOS then asks once too), or open the song there and press play yourself.
 import { useEffect, useState } from "react";
 import { allowControl, goHome, openInApp, type ControlNeeded } from "@/lib/session";
+import { useI18n } from "@/lib/i18n";
 
 export default function ControlPrompt() {
+  const { t } = useI18n();
   const [ask, setAsk] = useState<ControlNeeded | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -58,7 +60,7 @@ export default function ControlPrompt() {
           </p>
         )}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <button onClick={() => setAsk(null)} className="rounded-xl px-4 py-2 text-sm text-ink-300 transition hover:text-white">Not now</button>
+          <button onClick={() => setAsk(null)} className="rounded-xl px-4 py-2 text-sm text-ink-300 transition hover:text-white">{t("common.notNow")}</button>
           {ask.track && (
             <button onClick={open} className="rounded-xl bg-white/8 px-4 py-2 text-sm text-ink-100 transition hover:bg-white/12">
               Open in {browser ? "your browser" : ask.app}
@@ -71,7 +73,7 @@ export default function ControlPrompt() {
             </button>
           )}
         </div>
-        <p className="mt-4 text-[11px] text-ink-500">You can change this any time in Settings.</p>
+        <p className="mt-4 text-[11px] text-ink-500">{t("control.settingsHint")}</p>
       </div>
     </div>
   );

@@ -14,8 +14,10 @@ import { FinishSong, SingSwitches, Icon, Lyrics, ScoreAndHint, SkipToSinging, So
 import { getLibrary, inApp, learnAnyway, isFavorite, learnPct, learnStage, live, openApp, startingSong, openPrivacySettings, playerNow, renameTrack, setFavorite, setMini, setupOpenSettings, setupStatus, setYouTube, usePlaying, useSession, type LearnJob, type Line, type SongState, type Status } from "@/lib/session";
 import { typing } from "@/lib/keys";
 import { clock, sourceName } from "@/lib/music";
+import { useI18n } from "@/lib/i18n";
 
 export default function Sing() {
+  const { t } = useI18n();
   useEffect(() => { live.start(); }, []);
   const { song: playing, connected, status, ended, takes, problem, score, line, learning, drowned, notSong } = useSession();
   // listening mode, the song changed (or isn't named yet): the old one goes at once, the status line says what's happening
@@ -103,7 +105,7 @@ export default function Sing() {
         <div className="flex items-center justify-end gap-4">
           {song && <ScoreAndHint />}
           {app && (
-            <button onClick={() => toggleMini(true)} title="Mini mode: a small lyrics bar that stays on top of other apps (M)"
+            <button onClick={() => toggleMini(true)} title={`${t("sing.playSongMini")} (M)`}
                     className="grid h-9 w-9 place-items-center rounded-full text-ink-300 transition hover:bg-white/8 hover:text-white">
               <Icon d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM12.5 11.5h5.5v4.5h-5.5z" size={18} />
             </button>
@@ -138,6 +140,7 @@ export default function Sing() {
 }
 
 function Learning() {
+  const { t: translate } = useI18n();
   useTick(500);
   const playing = usePlaying();     // the dot pulses only while the song plays
   const song = live.song!;
@@ -155,11 +158,11 @@ function Learning() {
   return (
     <div className="pointer-events-none absolute inset-y-0 right-0" style={{ left: `calc(${KEYS_W}px + (100% - ${KEYS_W}px) * ${NOW_AT})` }}>
       <div className={`frost absolute top-1/2 left-1/2 w-[min(calc(100%-40px),300px)] rounded-[22px] px-[18px] pt-4 pb-3.5 text-center -translate-x-1/2 -translate-y-1/2`}>
-        <div className="mx-auto mb-2.5 flex w-fit items-center gap-2 rounded-full bg-accent-500/14 px-3 py-1 text-xs font-medium text-accent-300">{dot}Learning this song</div>
-        <h2 className="text-base font-semibold tracking-tight">Your blind take</h2>
-        <p className="mt-1 text-[12.5px] leading-snug text-ink-200/85">Sing along, no hints. Next time you’ll see every note coming.</p>
+        <div className="mx-auto mb-2.5 flex w-fit items-center gap-2 rounded-full bg-accent-500/14 px-3 py-1 text-xs font-medium text-accent-300">{dot}{translate("learning.thisSong")}</div>
+        <h2 className="text-base font-semibold tracking-tight">{translate("learning.blindTake")}</h2>
+        <p className="mt-1 text-[12.5px] leading-snug text-ink-200/85">{translate("learning.blindHint")}</p>
         {bar("mt-3 h-1")}
-        <div className="mt-2 text-[11.5px] text-ink-300"><span className="tabular">{clock(t)}{d > 0 && ` / ${clock(d)}`}</span> · score after the song</div>
+        <div className="mt-2 text-[11.5px] text-ink-300"><span className="tabular">{clock(t)}{d > 0 && ` / ${clock(d)}`}</span> · {translate("learning.scoreAfter")}</div>
       </div>
     </div>
   );
@@ -181,6 +184,7 @@ function StatusLine({ line }: { line: Line }) {
  *  far it's got, as a thin bar that moves only when the engine reports (see LearnBar). The song being learned is
  *  the one shown; one waiting behind it (one is learned at a time) is only counted. */
 function LearningLine({ jobs, className = "" }: { jobs: LearnJob[]; className?: string }) {
+  const { t } = useI18n();
   const after = jobs.filter(j => j.fraction != null);
   if (!after.length) return null;
   const j = after.find(a => a.stage !== "queued") ?? after[0], pct = learnPct(j);
@@ -189,8 +193,8 @@ function LearningLine({ jobs, className = "" }: { jobs: LearnJob[]; className?: 
          title={after.length > 1 ? after.map(a => a.name).join(", ") : undefined}>
       <div className="flex items-baseline gap-1.5">
         {pct == null
-          ? <span className="truncate text-ink-300">Waiting to learn <span className="text-ink-100">{j.name}</span></span>
-          : <span className="truncate text-ink-300">Learning <span className="text-ink-100">{j.name}</span>: {learnStage(j).toLowerCase()}</span>}
+          ? <span className="truncate text-ink-300">{t("live.waitingToLearn")} <span className="text-ink-100">{j.name}</span></span>
+          : <span className="truncate text-ink-300">{t("live.learning")} <span className="text-ink-100">{j.name}</span>: {learnStage(j).toLowerCase()}</span>}
         <span className="tabular ml-auto shrink-0 text-ink-400">{after.length > 1 ? `+${after.length - 1}` : ""}{after.length > 1 && pct != null ? " · " : ""}{pct != null ? `${pct}%` : ""}</span>
       </div>
       <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-white/8">
@@ -216,6 +220,7 @@ const LINE_SUB: Record<Line["kind"], string> = {
 const STARTERS_AFTER_MS = 45_000;
 
 function Waiting({ connected, line, player, youtube, listening, onSetup }: { connected: boolean; line: Line | null; player: null | { state: string; name: string; artist: string }; youtube: boolean; listening: boolean; onSetup: () => void }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const said = line && line.kind !== "learning" ? line : null;
   // songs to try: while nothing plays, and on a first run when OnKey has heard no song for a while
@@ -237,8 +242,8 @@ function Waiting({ connected, line, player, youtube, listening, onSetup }: { con
   }, [start]);
   const idle = !said && player?.state !== "playing" && !start;
   const starters = connected && startersHidden === false && (idle || (firstRun && waited && !start));
-  const title = !connected ? "Starting OnKey…" : start ? (start.name ? `Starting ${start.name}…` : "Starting the song…") : said ? (said.kind === "finding" || said.kind === "new_song" ? "Getting ready…" : said.kind === "podcast" ? "Not a song" : said.kind === "elsewhere" ? said.text : "Still listening") : player?.state === "playing" ? "Getting ready…"
-    : youtube ? "Play a song in Spotify, Apple Music or YouTube" : "Play a song in Spotify or Apple Music";
+  const title = !connected ? t("sing.starting") : start ? (start.name ? `${t("sing.starting")} ${start.name}…` : t("sing.startingSong")) : said ? (said.kind === "finding" || said.kind === "new_song" ? t("sing.gettingReady") : said.kind === "podcast" ? t("sing.notSong") : said.kind === "elsewhere" ? said.text : t("sing.stillListening")) : player?.state === "playing" ? t("sing.gettingReady")
+    : youtube ? t("sing.playSpotifyAppleYoutube") : t("sing.playSpotifyApple");
   const sub = !connected
     ? "Connecting to the engine on this Mac."
     : start
@@ -260,27 +265,25 @@ function Waiting({ connected, line, player, youtube, listening, onSetup }: { con
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="mt-2 text-ink-300">{sub}</p>
         <div className="mt-6 flex justify-center gap-4 text-xs text-ink-400">
-          <span><Kbd>Space</Kbd> play / pause</span><span><Kbd>R</Kbd> start over</span><span><Kbd>←</Kbd><Kbd>→</Kbd> skip</span><span><Kbd>F</Kbd> favourite</span>
+          <span><Kbd>Space</Kbd> {t("sing.playPause")}</span><span><Kbd>R</Kbd> {t("sing.startOver")}</span><span><Kbd>←</Kbd><Kbd>→</Kbd> {t("sing.skip")}</span><span><Kbd>F</Kbd> {t("sing.favourite")}</span>
         </div>
         {/* the YouTube switch; when listening, only while it's off (songs in a browser aren't picked up until it's on) */}
         {connected && (!listening || !youtube) && (
           <div className="mx-auto mt-8 max-w-sm rounded-xl border border-white/6 px-4 py-3 text-left text-xs text-ink-400">
             <div className="flex items-center justify-between gap-3">
-              <span className="font-medium text-ink-200">YouTube and YouTube Music <span className="ml-1 rounded-full bg-white/6 px-1.5 py-px text-[10px] font-normal text-ink-300">Experimental</span></span>
+              <span className="font-medium text-ink-200">{t("sing.youtube")} <span className="ml-1 rounded-full bg-white/6 px-1.5 py-px text-[10px] font-normal text-ink-300">{t("sing.experimental")}</span></span>
               <button disabled={busy} onClick={async () => { setBusy(true); await setYouTube(!youtube); setBusy(false); }}
                       className="shrink-0 rounded-lg bg-white/6 px-2.5 py-1 text-ink-100 transition hover:bg-white/10 disabled:opacity-50">
-                {youtube ? "Turn off" : "Turn on"}</button>
+                {youtube ? t("sing.turnOff") : t("sing.turnOn")}</button>
             </div>
-            <p className="mt-1.5">{youtube
-              ? "On. macOS asks once to let OnKey control your browser, so it can read where the video is."
-              : "Off, so songs playing in your browser aren’t picked up. Turn it on to sing along in Chrome, Safari, Brave or Edge: macOS asks once to let OnKey control the browser."}</p>
+            <p className="mt-1.5">{youtube ? t("sing.youtubeOn") : t("sing.youtubeOff")}</p>
           </div>
         )}
-        <button onClick={onSetup} className="mt-5 text-xs text-ink-500 transition hover:text-ink-200">Setup: permissions and mic check</button>
+        <button onClick={onSetup} className="mt-5 text-xs text-ink-500 transition hover:text-ink-200">{t("sing.setup")}</button>
       </div>
       {starters && <StarterSongs onHide={() => hideStarters(true)} className="mt-8 animate-rise" />}
       {connected && idle && startersHidden && (
-        <button onClick={() => hideStarters(false)} className="mt-6 text-xs text-ink-500 transition hover:text-ink-200">Songs to try</button>
+        <button onClick={() => hideStarters(false)} className="mt-6 text-xs text-ink-500 transition hover:text-ink-200">{t("sing.songsToTry")}</button>
       )}
       </div>
     </div>
@@ -431,6 +434,7 @@ function NotASong({ id, name }: { id: string; name: string }) {
 }
 
 function SpeakerHint({ id }: { id: string }) {
+  const { t } = useI18n();
   const [shown, setShown] = useState(false);
   useEffect(() => {
     if (speakerHinted.has(id)) return;
@@ -449,10 +453,10 @@ function SpeakerHint({ id }: { id: string }) {
     <div className="pointer-events-none absolute inset-x-0 bottom-6 z-10 flex justify-center px-6">
       <div role="status" className="glass pointer-events-auto w-full max-w-md animate-rise rounded-2xl px-4 py-3 shadow-2xl shadow-black/40">
         <div className="flex items-start justify-between gap-3">
-          <p className="text-sm text-ink-200">OnKey can’t hear you over the music. If you’re singing, turn it down a little or use headphones for a fair score.</p>
+          <p className="text-sm text-ink-200">{t("sing.speakerHint")}</p>
           <button onClick={() => setShown(false)} aria-label="Dismiss" className="-mr-1 shrink-0 rounded-md px-1.5 text-ink-400 transition hover:text-ink-100">×</button>
         </div>
-        <button onClick={never} className="mt-1.5 text-xs text-ink-400 underline-offset-2 transition hover:text-ink-200 hover:underline">Don’t show again</button>
+        <button onClick={never} className="mt-1.5 text-xs text-ink-400 underline-offset-2 transition hover:text-ink-200 hover:underline">{t("sing.speakerHintHide")}</button>
       </div>
     </div>
   );
@@ -478,11 +482,12 @@ function Notice({ title, action, onClose, children }: { title: string; action?: 
 }
 
 function Ended({ takes }: { takes: { name: string; artist: string; score: number | null; report: string | null }[] }) {
+  const { t } = useI18n();
   return (
     <div className="absolute inset-0 grid place-items-center bg-ink-950/90 p-6">
       <div className="w-full max-w-md animate-rise text-center">
-        <h2 className="text-2xl font-semibold tracking-tight">Session finished</h2>
-        <p className="mt-1 text-ink-300">{takes.length ? "Here’s how you did." : "No takes long enough to score this time."}</p>
+        <h2 className="text-2xl font-semibold tracking-tight">{t("live.sessionFinished")}</h2>
+        <p className="mt-1 text-ink-300">{takes.length ? t("live.howDid") : t("live.noTakes")}</p>
         <div className="mt-6 space-y-2 text-left">
           {takes.map((t, i) => (
             <Link key={i} href={t.report ? `/take?id=${encodeURIComponent(t.report)}` : "/history"}
@@ -528,6 +533,7 @@ function NeedsPermission({ app }: { app: string }) {
  *  rounded card floating above other apps. Drag it anywhere (text doesn't catch the mouse, so the whole card
  *  is a handle); the button opens the full window again. */
 function Mini({ onExpand }: { onExpand: () => void }) {
+  const { t } = useI18n();
   const { song, score } = useSession();
   const dancerOn = useDancer();
   // the dancer can be hidden from this card alone (the full window's switch is separate), remembered
@@ -547,11 +553,11 @@ function Mini({ onExpand }: { onExpand: () => void }) {
         <div data-tauri-drag-region className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
           <div data-tauri-drag-region className="flex items-center gap-3">
             <div className="pointer-events-none min-w-0 flex-1">
-              {song ? <Lyrics compact /> : <p className="text-sm text-ink-400">Play a song in Spotify or Apple Music</p>}
+              {song ? <Lyrics compact /> : <p className="text-sm text-ink-400">{t("live.playSong")}</p>}
             </div>
             <div className="pointer-events-none text-right">
               <div className="tabular text-xl font-bold leading-none">{song?.mode === "learn" ? "–" : score ?? "–"}</div>
-              <div className="text-[9px] uppercase tracking-wider text-ink-500">score</div>
+              <div className="text-[9px] uppercase tracking-wider text-ink-500">{t("live.scoreLower")}</div>
             </div>
           </div>
         </div>

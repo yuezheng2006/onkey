@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2167.1283750000002 1215.2" width="2167.1283750000002" height="1215.2" style="--bg:#FFFFFF;--fg:#27272A;background:#f5f5f5">
+<rect width="100%" height="100%" fill="#f5f5f5" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          #2d3142;
+    --_text-sec:      var(--muted, color-mix(in srgb, #2d3142 60%, #f5f5f5));
+    --_text-muted:    var(--muted, color-mix(in srgb, #2d3142 40%, #f5f5f5));
+    --_text-faint:    color-mix(in srgb, #2d3142 25%, #f5f5f5);
+    --_line:          var(--line, color-mix(in srgb, #2d3142 50%, #f5f5f5));
+    --_arrow:         var(--accent, color-mix(in srgb, #2d3142 85%, #f5f5f5));
+    --_node-fill:     var(--surface, color-mix(in srgb, #2d3142 3%, #f5f5f5));
+    --_node-stroke:   var(--border, color-mix(in srgb, #2d3142 20%, #f5f5f5));
+    --_group-fill:    #f5f5f5;
+    --_group-hdr:     color-mix(in srgb, #2d3142 5%, #f5f5f5);
+    --_inner-stroke:  color-mix(in srgb, #2d3142 12%, #f5f5f5);
+    --_key-badge:     color-mix(in srgb, #2d3142 10%, #f5f5f5);
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="#eb6c36" stroke="#eb6c36" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="#eb6c36" stroke="#eb6c36" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<g class="subgraph" data-id="INPUT" data-label="输入与播放来源">
+  <rect x="520.1365416666667" y="32" width="615.48" height="96.9" rx="0" ry="0" fill="#f5f5f5" stroke="#bfc0c0" stroke-width="1" />
+  <rect x="520.1365416666667" y="32" width="615.48" height="28" rx="0" ry="0" fill="#ececec" stroke="#bfc0c0" stroke-width="1" />
+  <text x="532.1365416666667" y="46" font-size="12" font-weight="600" fill="#4f5d75" dy="4.199999999999999">输入与播放来源</text>
+</g>
+<g class="subgraph" data-id="NATIVE" data-label="macOS Tauri 原生层">
+  <rect x="883.6080416666668" y="333.79999999999995" width="495.01199999999994" height="301.40000000000003" rx="0" ry="0" fill="#f5f5f5" stroke="#bfc0c0" stroke-width="1" />
+  <rect x="883.6080416666668" y="333.79999999999995" width="495.01199999999994" height="28" rx="0" ry="0" fill="#ececec" stroke="#bfc0c0" stroke-width="1" />
+  <text x="895.6080416666668" y="347.79999999999995" font-size="12" font-weight="600" fill="#4f5d75" dy="4.199999999999999">macOS Tauri 原生层</text>
+</g>
+<g class="subgraph" data-id="DSP" data-label="本地学习与评分流水线">
+  <rect x="32" y="425.70000000000005" width="262.8315" height="395.20000000000005" rx="0" ry="0" fill="#f5f5f5" stroke="#bfc0c0" stroke-width="1" />
+  <rect x="32" y="425.70000000000005" width="262.8315" height="28" rx="0" ry="0" fill="#ececec" stroke="#bfc0c0" stroke-width="1" />
+  <text x="44" y="439.70000000000005" font-size="12" font-weight="600" fill="#4f5d75" dy="4.199999999999999">本地学习与评分流水线</text>
+</g>
+<g class="subgraph" data-id="UI" data-label="React + Next.js 界面">
+  <rect x="824.8490000000002" y="749.2" width="663.158375" height="215.60000000000002" rx="0" ry="0" fill="#f5f5f5" stroke="#bfc0c0" stroke-width="1" />
+  <rect x="824.8490000000002" y="749.2" width="663.158375" height="28" rx="0" ry="0" fill="#ececec" stroke="#bfc0c0" stroke-width="1" />
+  <text x="836.8490000000002" y="763.2" font-size="12" font-weight="600" fill="#4f5d75" dy="4.199999999999999">React + Next.js 界面</text>
+</g>
+<g class="subgraph" data-id="LOCAL" data-label="本机持久化">
+  <rect x="133.37000000000006" y="852.9000000000001" width="619.479" height="113.80000000000001" rx="0" ry="0" fill="#f5f5f5" stroke="#bfc0c0" stroke-width="1" />
+  <rect x="133.37000000000006" y="852.9000000000001" width="619.479" height="28" rx="0" ry="0" fill="#ececec" stroke="#bfc0c0" stroke-width="1" />
+  <text x="145.37000000000006" y="866.9000000000001" font-size="12" font-weight="600" fill="#4f5d75" dy="4.199999999999999">本机持久化</text>
+</g>
+<g class="subgraph" data-id="CLOUD" data-label="外部服务">
+  <rect x="1470.7423750000003" y="1069.4" width="664.386" height="113.80000000000001" rx="0" ry="0" fill="#f5f5f5" stroke="#bfc0c0" stroke-width="1" />
+  <rect x="1470.7423750000003" y="1069.4" width="664.386" height="28" rx="0" ry="0" fill="#ececec" stroke="#bfc0c0" stroke-width="1" />
+  <text x="1482.7423750000003" y="1083.4" font-size="12" font-weight="600" fill="#4f5d75" dy="4.199999999999999">外部服务</text>
+</g>
+<polyline class="edge" data-from="MUSIC" data-to="CAPTURE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="698.8695416666667,94.45 901.2922916666668,94.45 901.2922916666668,404.69999999999993 910.6080416666668,404.69999999999993" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="BROWSER" data-to="CAPTURE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="891.9765416666667,94.45 901.2922916666668,94.45 901.2922916666668,404.69999999999993 910.6080416666668,404.69999999999993" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="MIC" data-to="CAPTURE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="955.1815416666667,112.9 955.1815416666667,128.9 955.1815416666666,151.90000000000003 955.1815416666668,151.90000000000003 955.1815416666668,333.79999999999995 955.1815416666668,377.79999999999995" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="MUSIC" data-to="CONTROL" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="控制播放" points="644.6252083333334,112.9 644.6252083333334,128.9 644.6252083333334,216.20000000000005 1263.3807083333334,216.20000000000005 1263.3807083333336,333.79999999999995 1263.3807083333336,377.79999999999995" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="BROWSER" data-to="CONTROL" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="控制播放" points="834.2742083333334,112.9 834.2742083333334,128.9 834.2742083333333,173.90000000000003 1188.1413750000002,173.90000000000003 1188.1413750000002,333.79999999999995 1188.1413750000002,377.79999999999995" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="USER" data-to="ENGINE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1119.6165416666668,94.45 1136.1681250000001,94.45 1136.1681250000001,498.49999999999994 1152.7197083333335,498.49999999999994" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="ENGINE" data-to="SEPARATE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1278.6597083333336,525.4 1278.6597083333336,537.4 1314.6805416666668,537.4 1314.6805416666668,635.2 1314.6805416666668,645.2 871.6080416666668,645.2 871.6080416666668,415.70000000000005 187.832,415.70000000000005 184.868,425.70000000000005 184.868,469.70000000000005" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="NOTES" data-to="STORE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="221.12916666666663,711.1000000000001 218.16516666666666,723.1000000000001 237.776,723.1000000000001 237.776,820.9000000000001 237.776,830.9000000000001 237.776,830.9000000000001 226.32725000000002,852.9000000000001 226.32725000000002,896.9000000000001" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SCORE" data-to="TAKES" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="137.88799999999998,804.9000000000001 137.888,820.9000000000001 137.88800000000003,842.9000000000001 447.185,842.9000000000001 447.185,852.9000000000001 447.185,896.9000000000001" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="STORE" data-to="ENGINE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="314.73325,923.8000000000001 1136.1681250000001,923.8000000000001 1136.1681250000001,498.49999999999994 1152.7197083333335,498.49999999999994" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="TAKES" data-to="ENGINE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="548.188,923.8000000000001 1136.1681250000001,923.8000000000001 1136.1681250000001,498.49999999999994 1152.7197083333335,498.49999999999994" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="COMMANDS" data-to="SESSION" data-style="solid" data-arrow-start="true" data-arrow-end="true" points="1209.2350416666668,619.2 1209.2350416666668,635.2 1209.2350416666668,703.0500000000001 1290.4050416666669,703.0500000000001 1279.4863750000002,749.2 1279.4863750000002,793.2" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" marker-start="url(#arrowhead-start)" />
+<polyline class="edge" data-from="SETTINGS" data-to="SESSION" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="652.5185000000001,950.7 652.5185000000001,966.7 652.5185000000001,976.7 800.8490000000002,976.7 800.8490000000002,1142.9 800.8490000000002,1142.9 800.8490000000002,739.2 1227.0217083333337,739.2 1216.1030416666667,749.2 1216.1030416666667,793.2" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SESSION" data-to="SETTINGS" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1295.3322083333335,847 1295.3322083333335,871 1458.0073750000001,871 1458.0073750000001,964.8000000000001 1458.0073750000001,974.8000000000002 812.8490000000002,974.8000000000002 812.8490000000002,922.95 764.8490000000002,922.95 764.8490000000002,577.95 652.5185000000001,577.95 652.5185000000001,852.9000000000001 652.5185000000001,896.9000000000001" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="ENGINE" data-to="SHAZAM" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="歌曲识别" points="1194.6997083333335,525.4 1194.6997083333335,537.4 1102.7895416666668,537.4 1102.7895416666668,635.2 1102.7895416666668,719.0500000000001 1552.1773750000002,719.0500000000001 1552.1773750000002,1069.4 1552.1773750000002,1113.4" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SESSION" data-to="LRCLIB" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="歌词查询" points="1319.1009583333334,847 1319.1009583333334,859 1471.0073750000001,859 1471.0073750000001,964.8000000000001 1471.0073750000001,992.8000000000002 1688.2273750000004,992.8000000000002 1688.2273750000004,1069.4 1688.2273750000004,1113.4" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SESSION" data-to="SEARCH" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="歌曲/封面查询" points="1224.0259583333334,847 1224.0259583333334,859 1240.3290000000002,859 1240.3290000000002,964.8000000000001 1240.3290000000002,1059.4 1856.1403750000004,1059.4 1856.1403750000004,1069.4 1856.1403750000004,1113.4" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SESSION" data-to="GITHUB" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="更新检查" points="1247.7947083333336,847 1258.713375,964.8000000000001 1258.7133750000003,1026.1000000000001 2046.2833750000004,1026.1000000000001 2046.2833750000002,1069.4 2046.2833750000002,1113.4" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="CAPTURE" data-to="ENGINE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1088.9020416666667,404.69999999999993 1136.1681250000001,404.69999999999993 1136.1681250000001,498.49999999999994 1152.7197083333335,498.49999999999994" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="CONTROL" data-to="ENGINE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1236.6797083333336,431.59999999999997 1236.6797083333336,471.59999999999997" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="ENGINE" data-to="COMMANDS" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1236.6797083333336,525.4 1236.6797083333336,537.4 1209.2350416666668,537.4 1209.2350416666668,565.4" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SEPARATE" data-to="PITCH" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="196.31675,523.5 196.31675,563.5" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="PITCH" data-to="NOTES" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="202.24475,617.3000000000001 202.24475,657.3000000000001" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="NOTES" data-to="SCORE" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="160.46283333333332,711.1000000000001 160.46283333333332,723.1000000000001 137.888,723.1000000000001 137.88799999999998,751.1000000000001" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SESSION" data-to="SING" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1271.5634583333335,847 1271.5634583333335,883 1358.8603750000002,883 1358.8603750000002,895" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SESSION" data-to="LIBRARY" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1176.4884583333335,847 1176.4884583333335,859 935.9240000000002,859 935.9240000000002,895" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="SESSION" data-to="SETUP" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1200.2572083333334,847 1200.2572083333334,871 1142.6640000000002,871 1142.6640000000002,895" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="MUSIC" data-to="CONTROL" data-label="控制播放">
+  <rect x="882.0115416666667" y="200.20000000000005" width="65.17" height="30.3" rx="2" ry="2" fill="#f5f5f5" stroke="#d9dadd" stroke-width="1" />
+  <text x="914.5965416666668" y="215.35000000000005" text-anchor="middle" font-size="11" font-weight="400" fill="#4f5d75" dy="3.8499999999999996">控制播放</text>
+</g>
+<g class="edge-label" data-from="BROWSER" data-to="CONTROL" data-label="控制播放">
+  <rect x="882.0115416666667" y="157.90000000000003" width="65.17" height="30.3" rx="2" ry="2" fill="#f5f5f5" stroke="#d9dadd" stroke-width="1" />
+  <text x="914.5965416666668" y="173.05000000000004" text-anchor="middle" font-size="11" font-weight="400" fill="#4f5d75" dy="3.8499999999999996">控制播放</text>
+</g>
+<g class="edge-label" data-from="ENGINE" data-to="SHAZAM" data-label="歌曲识别">
+  <rect x="1217.2350416666668" y="703.0500000000001" width="65.17" height="30.3" rx="2" ry="2" fill="#f5f5f5" stroke="#d9dadd" stroke-width="1" />
+  <text x="1249.8200416666668" y="718.2" text-anchor="middle" font-size="11" font-weight="400" fill="#4f5d75" dy="3.8499999999999996">歌曲识别</text>
+</g>
+<g class="edge-label" data-from="SESSION" data-to="LRCLIB" data-label="歌词查询">
+  <rect x="1479.0073750000001" y="976.8000000000002" width="65.17" height="30.3" rx="2" ry="2" fill="#f5f5f5" stroke="#d9dadd" stroke-width="1" />
+  <text x="1511.5923750000002" y="991.9500000000002" text-anchor="middle" font-size="11" font-weight="400" fill="#4f5d75" dy="3.8499999999999996">歌词查询</text>
+</g>
+<g class="edge-label" data-from="SESSION" data-to="SEARCH" data-label="歌曲/封面查询">
+  <rect x="1342.8423750000002" y="1043.4" width="91.9" height="30.3" rx="2" ry="2" fill="#f5f5f5" stroke="#d9dadd" stroke-width="1" />
+  <text x="1388.7923750000002" y="1058.5500000000002" text-anchor="middle" font-size="11" font-weight="400" fill="#4f5d75" dy="3.8499999999999996">歌曲/封面查询</text>
+</g>
+<g class="edge-label" data-from="SESSION" data-to="GITHUB" data-label="更新检查">
+  <rect x="1479.0073750000001" y="1010.1000000000003" width="65.17" height="30.3" rx="2" ry="2" fill="#f5f5f5" stroke="#d9dadd" stroke-width="1" />
+  <text x="1511.5923750000002" y="1025.2500000000002" text-anchor="middle" font-size="11" font-weight="400" fill="#4f5d75" dy="3.8499999999999996">更新检查</text>
+</g>
+<g class="node" data-id="USER" data-label="用户演唱" data-shape="rectangle">
+  <rect x="1018.3865416666667" y="76" width="101.22999999999999" height="36.900000000000006" rx="0" ry="0" fill="#eef2f7" stroke="#7a8399" stroke-width="1px" />
+  <text x="1069.0015416666668" y="94.45" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142" dy="4.55">用户演唱</text>
+</g>
+<g class="node" data-id="MUSIC" data-label="Spotify / Apple Music" data-shape="rectangle">
+  <rect x="536.1365416666667" y="76" width="162.733" height="36.900000000000006" rx="0" ry="0" fill="#eef2f7" stroke="#7a8399" stroke-width="1px" />
+  <text x="617.5030416666667" y="94.45" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142" dy="4.55">Spotify / Apple Music</text>
+</g>
+<g class="node" data-id="BROWSER" data-label="浏览器中的 YouTube" data-shape="rectangle">
+  <rect x="718.8695416666667" y="76" width="173.10699999999997" height="36.900000000000006" rx="0" ry="0" fill="#eef2f7" stroke="#7a8399" stroke-width="1px" />
+  <text x="805.4230416666667" y="94.45" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142" dy="4.55">浏览器中的 YouTube</text>
+</g>
+<g class="node" data-id="MIC" data-label="麦克风" data-shape="rectangle">
+  <rect x="911.9765416666667" y="76" width="86.41" height="36.900000000000006" rx="0" ry="0" fill="#eef2f7" stroke="#7a8399" stroke-width="1px" />
+  <text x="955.1815416666667" y="94.45" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142" dy="4.55">麦克风</text>
+</g>
+<g class="node" data-id="CAPTURE" data-label="音频采集与同步
+capture / listen / source" data-shape="rectangle">
+  <rect x="910.6080416666668" y="377.79999999999995" width="178.29399999999998" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="999.7550416666668" y="404.69999999999993" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="999.7550416666668" dy="-3.9000000000000012">音频采集与同步</tspan><tspan x="999.7550416666668" dy="16.900000000000002">capture / listen / source</tspan></text>
+</g>
+<g class="node" data-id="CONTROL" data-label="音乐应用控制
+Spotify / Apple Music / YouTube" data-shape="rectangle">
+  <rect x="1112.9020416666667" y="377.79999999999995" width="225.718" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="1225.7610416666666" y="404.69999999999993" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1225.7610416666666" dy="-3.9000000000000012">音乐应用控制</tspan><tspan x="1225.7610416666666" dy="16.900000000000002">Spotify / Apple Music / YouTube</tspan></text>
+</g>
+<g class="node" data-id="ENGINE" data-label="实时演唱引擎
+engine / take / tracker" data-shape="rectangle">
+  <rect x="1152.7197083333335" y="471.59999999999997" width="167.92000000000002" height="53.800000000000004" rx="0" ry="0" fill="#fff1e9" stroke="#eb6c36" stroke-width="1.5px" />
+  <text x="1236.6797083333336" y="498.49999999999994" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1236.6797083333336" dy="-3.9000000000000012">实时演唱引擎</tspan><tspan x="1236.6797083333336" dy="16.900000000000002">engine / take / tracker</tspan></text>
+</g>
+<g class="node" data-id="COMMANDS" data-label="Tauri commands + events
+lib.rs ↔ WebView" data-shape="rectangle">
+  <rect x="1113.7895416666668" y="565.4" width="190.891" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="1209.2350416666668" y="592.3" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1209.2350416666668" dy="-3.9000000000000012">Tauri commands + events</tspan><tspan x="1209.2350416666668" dy="16.900000000000002">lib.rs ↔ WebView</tspan></text>
+</g>
+<g class="node" data-id="SEPARATE" data-label="人声分离
+MDX / bleed / analysis" data-shape="rectangle">
+  <rect x="99.79650000000001" y="469.70000000000005" width="170.14299999999997" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="184.868" y="496.6" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="184.868" dy="-3.9000000000000012">人声分离</tspan><tspan x="184.868" dy="16.900000000000002">MDX / bleed / analysis</tspan></text>
+</g>
+<g class="node" data-id="PITCH" data-label="音高跟踪
+CREPE / pitch" data-shape="rectangle">
+  <rect x="137.92125000000001" y="563.5" width="122.71900000000001" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="199.28075" y="590.4" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="199.28075" dy="-3.9000000000000012">音高跟踪</tspan><tspan x="199.28075" dy="16.900000000000002">CREPE / pitch</tspan></text>
+</g>
+<g class="node" data-id="NOTES" data-label="旋律与音符生成
+GAME / notes / syllables" data-shape="rectangle">
+  <rect x="99.79650000000001" y="657.3000000000001" width="181.99899999999997" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="190.796" y="684.2" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="190.796" dy="-3.9000000000000012">旋律与音符生成</tspan><tspan x="190.796" dy="16.900000000000002">GAME / notes / syllables</tspan></text>
+</g>
+<g class="node" data-id="SCORE" data-label="演唱评分与报告
+score / records / report" data-shape="rectangle">
+  <rect x="48" y="751.1000000000001" width="179.77599999999998" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="137.88799999999998" y="778.0000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="137.88799999999998" dy="-3.9000000000000012">演唱评分与报告</tspan><tspan x="137.88799999999998" dy="16.900000000000002">score / records / report</tspan></text>
+</g>
+<g class="node" data-id="SING" data-label="演唱页
+Lane / LiveBits / Lyrics" data-shape="rectangle">
+  <rect x="1269.713375" y="895" width="178.29399999999998" height="53.800000000000004" rx="0" ry="0" fill="#f8f5ff" stroke="#6d5bd0" stroke-width="1px" />
+  <text x="1358.860375" y="921.9" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1358.860375" dy="-3.9000000000000012">演唱页</tspan><tspan x="1358.860375" dy="16.900000000000002">Lane / LiveBits / Lyrics</tspan></text>
+</g>
+<g class="node" data-id="LIBRARY" data-label="曲库、历史与歌曲详情" data-shape="rectangle">
+  <rect x="840.8490000000002" y="895" width="190.14999999999998" height="36.900000000000006" rx="0" ry="0" fill="#f8f5ff" stroke="#6d5bd0" stroke-width="1px" />
+  <text x="935.9240000000002" y="913.45" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142" dy="4.55">曲库、历史与歌曲详情</text>
+</g>
+<g class="node" data-id="SETUP" data-label="首次设置与权限提示" data-shape="rectangle">
+  <rect x="1054.9990000000003" y="895" width="175.32999999999998" height="36.900000000000006" rx="0" ry="0" fill="#f8f5ff" stroke="#6d5bd0" stroke-width="1px" />
+  <text x="1142.6640000000002" y="913.45" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142" dy="4.55">首次设置与权限提示</text>
+</g>
+<g class="node" data-id="SESSION" data-label="session.ts
+状态、事件与本地调用" data-shape="rectangle">
+  <rect x="1152.7197083333335" y="793.2" width="190.14999999999998" height="53.800000000000004" rx="0" ry="0" fill="#ffffff" stroke="#2d3142" stroke-width="1px" />
+  <text x="1247.7947083333336" y="820.1" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1247.7947083333336" dy="-3.9000000000000012">session.ts</tspan><tspan x="1247.7947083333336" dy="16.900000000000002">状态、事件与本地调用</tspan></text>
+</g>
+<g class="node" data-id="STORE" data-label="本地歌曲与旋律缓存
+store / lyrics / syllables" data-shape="rectangle">
+  <rect x="137.92125000000001" y="896.9000000000001" width="176.81199999999998" height="53.800000000000004" rx="0" ry="0" fill="#eef0f3" stroke="#4f5d75" stroke-width="1px" />
+  <text x="226.32725" y="923.8000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="226.32725" dy="-3.9000000000000012">本地歌曲与旋律缓存</tspan><tspan x="226.32725" dy="16.900000000000002">store / lyrics / syllables</tspan></text>
+</g>
+<g class="node" data-id="TAKES" data-label="演唱记录、录音与报告
+records / takeaudio / report" data-shape="rectangle">
+  <rect x="346.182" y="896.9000000000001" width="202.00599999999997" height="53.800000000000004" rx="0" ry="0" fill="#eef0f3" stroke="#4f5d75" stroke-width="1px" />
+  <text x="447.185" y="923.8000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="447.185" dy="-3.9000000000000012">演唱记录、录音与报告</tspan><tspan x="447.185" dy="16.900000000000002">records / takeaudio / report</tspan></text>
+</g>
+<g class="node" data-id="SETTINGS" data-label="设置与权限状态
+settings / permissions" data-shape="rectangle">
+  <rect x="568.1880000000001" y="896.9000000000001" width="168.661" height="53.800000000000004" rx="0" ry="0" fill="#eef0f3" stroke="#4f5d75" stroke-width="1px" />
+  <text x="652.5185000000001" y="923.8000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="652.5185000000001" dy="-3.9000000000000012">设置与权限状态</tspan><tspan x="652.5185000000001" dy="16.900000000000002">settings / permissions</tspan></text>
+</g>
+<g class="node" data-id="SHAZAM" data-label="Apple Shazam
+歌曲识别指纹" data-shape="rectangle">
+  <rect x="1486.7423750000003" y="1113.4" width="130.87" height="53.800000000000004" rx="0" ry="0" fill="#f5f5f5" stroke="#7a8399" stroke-width="1px" />
+  <text x="1552.1773750000002" y="1140.3000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1552.1773750000002" dy="-3.9000000000000012">Apple Shazam</tspan><tspan x="1552.1773750000002" dy="16.900000000000002">歌曲识别指纹</tspan></text>
+</g>
+<g class="node" data-id="LRCLIB" data-label="LRCLIB
+同步歌词" data-shape="rectangle">
+  <rect x="1637.6123750000002" y="1113.4" width="101.22999999999999" height="53.800000000000004" rx="0" ry="0" fill="#f5f5f5" stroke="#7a8399" stroke-width="1px" />
+  <text x="1688.2273750000002" y="1140.3000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1688.2273750000002" dy="-3.9000000000000012">LRCLIB</tspan><tspan x="1688.2273750000002" dy="16.900000000000002">同步歌词</tspan></text>
+</g>
+<g class="node" data-id="SEARCH" data-label="iTunes / Spotify / YouTube
+歌曲与封面信息" data-shape="rectangle">
+  <rect x="1758.8423750000002" y="1113.4" width="194.59599999999995" height="53.800000000000004" rx="0" ry="0" fill="#f5f5f5" stroke="#7a8399" stroke-width="1px" />
+  <text x="1856.1403750000002" y="1140.3000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="1856.1403750000002" dy="-3.9000000000000012">iTunes / Spotify / YouTube</tspan><tspan x="1856.1403750000002" dy="16.900000000000002">歌曲与封面信息</tspan></text>
+</g>
+<g class="node" data-id="GITHUB" data-label="GitHub Releases
+更新检查与下载" data-shape="rectangle">
+  <rect x="1973.4383750000002" y="1113.4" width="145.69" height="53.800000000000004" rx="0" ry="0" fill="#f5f5f5" stroke="#7a8399" stroke-width="1px" />
+  <text x="2046.2833750000002" y="1140.3000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="#2d3142"><tspan x="2046.2833750000002" dy="-3.9000000000000012">GitHub Releases</tspan><tspan x="2046.2833750000002" dy="16.900000000000002">更新检查与下载</tspan></text>
+</g>
+</svg>
