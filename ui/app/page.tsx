@@ -140,6 +140,7 @@ export default function Sing() {
 }
 
 function Learning() {
+  const { t: translate } = useI18n();
   useTick(500);
   const playing = usePlaying();     // the dot pulses only while the song plays
   const song = live.song!;
@@ -157,11 +158,11 @@ function Learning() {
   return (
     <div className="pointer-events-none absolute inset-y-0 right-0" style={{ left: `calc(${KEYS_W}px + (100% - ${KEYS_W}px) * ${NOW_AT})` }}>
       <div className={`frost absolute top-1/2 left-1/2 w-[min(calc(100%-40px),300px)] rounded-[22px] px-[18px] pt-4 pb-3.5 text-center -translate-x-1/2 -translate-y-1/2`}>
-        <div className="mx-auto mb-2.5 flex w-fit items-center gap-2 rounded-full bg-accent-500/14 px-3 py-1 text-xs font-medium text-accent-300">{dot}Learning this song</div>
-        <h2 className="text-base font-semibold tracking-tight">Your blind take</h2>
-        <p className="mt-1 text-[12.5px] leading-snug text-ink-200/85">Sing along, no hints. Next time you’ll see every note coming.</p>
+        <div className="mx-auto mb-2.5 flex w-fit items-center gap-2 rounded-full bg-accent-500/14 px-3 py-1 text-xs font-medium text-accent-300">{dot}{translate("learning.thisSong")}</div>
+        <h2 className="text-base font-semibold tracking-tight">{translate("learning.blindTake")}</h2>
+        <p className="mt-1 text-[12.5px] leading-snug text-ink-200/85">{translate("learning.blindHint")}</p>
         {bar("mt-3 h-1")}
-        <div className="mt-2 text-[11.5px] text-ink-300"><span className="tabular">{clock(t)}{d > 0 && ` / ${clock(d)}`}</span> · score after the song</div>
+        <div className="mt-2 text-[11.5px] text-ink-300"><span className="tabular">{clock(t)}{d > 0 && ` / ${clock(d)}`}</span> · {translate("learning.scoreAfter")}</div>
       </div>
     </div>
   );
