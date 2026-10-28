@@ -8,6 +8,7 @@ import { Logo, Nav } from "@/components/Nav";
 import LearnBar from "@/components/LearnBar";
 import StarterSongs, { useStartersHidden } from "@/components/StarterSongs";
 import { firstPlayGoing, forgetSong, getLibrary, stopLearning, learnLabel, learnNow, live, type LearnJob, type LibrarySong, nowLocal, openInApp, playTrack, setFavorite, useSession } from "@/lib/session";
+import { useI18n } from "@/lib/i18n";
 
 type Filter = "all" | "favorites" | "unscored" | "partial";
 const FILTER_KEY = "onkey.libraryFilter";
@@ -33,6 +34,7 @@ function sorted(songs: LibrarySong[], sort: Sort): LibrarySong[] {
 
 // Songs OnKey has learned. Click one to play it in its app (Spotify or Apple Music) and sing it with the notes ahead.
 export default function Library() {
+  const { t } = useI18n();
   const [songs, setSongs] = useState<LibrarySong[] | null>(null);
   const [q, setQ] = useState("");
   const [starting, setStarting] = useState<string | null>(null);
@@ -134,11 +136,11 @@ export default function Library() {
       <main className="mx-auto max-w-6xl px-6 pb-16">
         <div className="mt-6 mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Library</h1>
-            <p className="mt-1 text-ink-300">Songs OnKey has learned. Pick one to sing it with every note shown ahead.</p>
+            <h1 className="text-3xl font-semibold tracking-tight">{t("library.title")}</h1>
+            <p className="mt-1 text-ink-300">{t("library.subtitle")}</p>
           </div>
           {all && all.length > 0 && (
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search songs"
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder={t("library.search")}
                    className="w-64 rounded-xl border border-white/8 bg-white/4 px-3.5 py-2 text-sm text-ink-100 placeholder:text-ink-400 outline-none transition focus:border-accent-400/50 focus:bg-white/6" />
           )}
         </div>
@@ -147,12 +149,12 @@ export default function Library() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2].map(i => <div key={i} className="glass h-36 rounded-3xl shimmer" />)}</div>
         ) : all.length === 0 ? (
           <div className={`glass rounded-3xl px-6 text-center ${startersHidden === false ? "pt-16 pb-6" : "py-20"}`}>
-            <h2 className="text-xl font-semibold">Nothing learned yet</h2>
+            <h2 className="text-xl font-semibold">{t("library.empty")}</h2>
             <p className="mx-auto mt-1 max-w-md text-ink-300">Play a song through once while OnKey is open and it learns the melody.
               A whole playlist works too: just let it play.</p>
-            <Link href="/" className="mt-5 inline-block rounded-xl bg-accent-500 px-4 py-2 font-medium text-white transition hover:bg-accent-400">Start</Link>
+            <Link href="/" className="mt-5 inline-block rounded-xl bg-accent-500 px-4 py-2 font-medium text-white transition hover:bg-accent-400">{t("library.start")}</Link>
             {startersHidden === false && <StarterSongs onHide={() => hideStarters(true)} className="mx-auto mt-12 max-w-4xl" />}
-            {startersHidden && <button onClick={() => hideStarters(false)} className="mt-4 block w-full text-xs text-ink-500 transition hover:text-ink-200">Show songs to try</button>}
+            {startersHidden && <button onClick={() => hideStarters(false)} className="mt-4 block w-full text-xs text-ink-500 transition hover:text-ink-200">{t("library.show")}</button>}
           </div>
         ) : (<>
           <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-3">

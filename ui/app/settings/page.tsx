@@ -10,6 +10,7 @@ import { Logo, Nav } from "@/components/Nav";
 import { reportProblem } from "@/components/ReportProblem";
 import { checkForUpdate, restartToUpdate, setAutoUpdate, useUpdate } from "@/lib/update";
 import { allowControl, getMics, getSettings, openLink, setMic, setSetting, setupControl, setYouTube, type Mics, type Settings } from "@/lib/session";
+import { useI18n } from "@/lib/i18n";
 
 /** Which microphone OnKey listens to: automatic (the Mac's input, as chosen in System Settings → Sound) or one
  *  picked here. Setup's mic check and your takes use the same one. */
@@ -107,6 +108,7 @@ function Row({ id, title, sub, on, onChange, badge, warn, disabled }: {
 }
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const [s, setS] = useState<Settings | null>(null);
   useEffect(() => { getSettings().then(setS).catch(() => setS(null)); }, []);
   // listening only: Spotify, Apple Music and YouTube all off (settings.rs `listen_only`)
@@ -129,10 +131,10 @@ export default function SettingsPage() {
     <div className="min-h-dvh bg-[radial-gradient(1200px_500px_at_50%_-10%,rgba(124,108,246,.10),transparent)]">
       <header data-tauri-drag-region className="app-header flex items-center gap-5 px-6 pt-4 pb-3"><Logo /><Nav /></header>
       <main className="mx-auto max-w-2xl px-6 pb-16">
-        <h1 className="mt-6 text-3xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="mt-6 text-3xl font-semibold tracking-tight">{t("settings.title")}</h1>
         {!s ? <div className="glass mt-6 h-40 rounded-3xl shimmer" /> : (
           <>
-            <h2 className="mt-6 mb-2 px-1 text-sm font-medium text-ink-200">Let OnKey control</h2>
+            <h2 className="mt-6 mb-2 px-1 text-sm font-medium text-ink-200">{t("settings.control")}</h2>
             <p className="mb-3 px-1 text-xs text-ink-400">
               {s.listening
                 ? "On by default: OnKey reads what’s playing and where (exact, instant positions), and can play, pause, seek and start songs. Nothing else. macOS asks once for each."
@@ -164,7 +166,7 @@ export default function SettingsPage() {
                 </p>
               )}
             </section>
-            <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">Lyrics</h2>
+            <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">{t("settings.lyrics")}</h2>
             <section className="glass overflow-hidden rounded-3xl">
               <Row id="set-show-lyrics" title="Show lyrics" on={s.show_lyrics !== false} onChange={on => change("show_lyrics", on)}
                    sub="Lyrics come from LRCLIB, a free community lyrics database. When off, OnKey doesn’t ask LRCLIB for any, and you sing to the notes alone: the pitch guide and your score work as usual." />
@@ -174,12 +176,12 @@ export default function SettingsPage() {
         <MicPicker />
         {s && (
           <>
-            <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">Your voice</h2>
+            <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">{t("settings.voice")}</h2>
             <section className="glass overflow-hidden rounded-3xl">
               <Row id="set-voice-breaks" title="Remind me to rest my voice" on={s.voice_breaks !== false} onChange={on => change("voice_breaks", on)}
                    sub="After about 35 minutes of singing, a quiet reminder to take a break. A 20-minute pause from singing starts the count again." />
             </section>
-            <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">Performance</h2>
+            <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">{t("settings.performance")}</h2>
             <section className="glass overflow-hidden rounded-3xl">
               <Row id="set-battery-30" title="Save battery while singing" on={s.battery_30fps !== false} onChange={on => change("battery_30fps", on)}
                    sub="On battery, the notes are drawn 30 times a second instead of 60: half the drawing work for your Mac, still smooth." />
@@ -188,7 +190,7 @@ export default function SettingsPage() {
             </section>
           </>
         )}
-        <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">About</h2>
+        <h2 className="mt-8 mb-2 px-1 text-sm font-medium text-ink-200">{t("settings.about")}</h2>
         <section className="glass overflow-hidden rounded-3xl">
           <Updates />
           <button onClick={() => reportProblem()} className="flex w-full items-center justify-between gap-6 border-b border-white/6 px-5 py-4 text-left text-sm text-ink-100 hover:bg-white/4">

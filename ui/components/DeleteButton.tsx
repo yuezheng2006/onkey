@@ -1,9 +1,11 @@
 "use client";
 // A small trash button that asks before deleting (inline, no dialog). Deleted things go to the Trash.
 import { useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 export default function DeleteButton({ what, confirm, onDelete, className = "" }:
     { what: string; confirm: string; onDelete: () => Promise<void> | void; className?: string }) {
+  const { t } = useI18n();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   if (asking)
@@ -12,8 +14,8 @@ export default function DeleteButton({ what, confirm, onDelete, className = "" }
             onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
         <span className="text-ink-300">{confirm}</span>
         <button disabled={busy} onClick={async () => { setBusy(true); await onDelete(); setBusy(false); setAsking(false); }}
-                className="rounded-full bg-off/20 px-2.5 py-1 font-medium text-off transition hover:bg-off/30">Delete</button>
-        <button onClick={() => setAsking(false)} className="rounded-full px-2.5 py-1 text-ink-300 transition hover:bg-white/8">Cancel</button>
+                className="rounded-full bg-off/20 px-2.5 py-1 font-medium text-off transition hover:bg-off/30">{t("common.delete")}</button>
+        <button onClick={() => setAsking(false)} className="rounded-full px-2.5 py-1 text-ink-300 transition hover:bg-white/8">{t("common.cancel")}</button>
       </span>
     );
   return (
