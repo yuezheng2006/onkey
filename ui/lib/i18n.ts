@@ -95,11 +95,14 @@ export function pickLocale(setting: string | null | undefined, preferred: readon
                            available: readonly string[] = locales()): string {
   const find = (code: string) => available.find(a => a.toLowerCase() === code);
   const match = (code: string): string | null => {
-    const want = code.trim().replace(/_/g, "-").toLowerCase();
+    const want = code.trim().split(/[.@]/, 1)[0].replace(/_/g, "-").toLowerCase();
     if (!want) return null;
-    const exact = find(want);
-    if (exact) return exact;
-    const [base, ...rest] = want.split("-");
+    const [base, ...rest] = want.split("-").filter(Boolean);
+    if (!base) return null;
+    for (let length = rest.length; length > 0; length--) {
+      const exact = find([base, ...rest.slice(0, length)].join("-"));
+      if (exact) return exact;
+    }
     if (base === "zh") {
       const traditional = rest.includes("hant") || (!rest.includes("hans") && rest.some(r => r === "tw" || r === "hk" || r === "mo"));
       return find(traditional ? "zh-hant" : "zh-hans") ?? find("zh") ?? null;
@@ -304,8 +307,13 @@ export function useT(): Translator {
   return useMemo(() => locale.startsWith("zh") ? tidied(() => tr, () => locale) : tr, [tr, locale]);
 }
 
-/** A date in the language shown ("1 Nov" in English on a British Mac): the window's language picks the words and
- *  order; the computer's own region still decides for English, as before (`undefined`). */
-export function dateLocale(): string | undefined {
-  return current === "en" ? undefined : current;
+/** Format dates in the displayed language. Keep the system's regional preference when it is English. */
+export function dateLocale(): string {
+  if (current !== "en") return current;
+  for (const preferred of systemLanguages()) {
+    const tag = preferred.trim().split(/[.@]/, 1)[0].replace(/_/g, "-");
+    if (!/^en(?:-|$)/i.test(tag)) continue;
+    try { return Intl.getCanonicalLocales(tag)[0]; } catch {}
+  }
+  return "en";
 }

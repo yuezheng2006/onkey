@@ -33,14 +33,14 @@ export async function deleteEach(ids: string[], del: (id: string) => Promise<voi
 }
 
 /** A list read from the engine: the items, or that it couldn't be read and why (never an empty list in its place). */
-export type Read<T> = { items: T[] } | { error: string; detail: string };
+export type ReadFailure = { what: "takes" | "songs"; detail: string };
+export type Read<T> = { items: T[] } | ReadFailure;
 
-export async function readList<T>(get: () => Promise<T[]>, what: "takes" | "songs"): Promise<Read<T>> {
-  const error = t("errors.readFailed", { what });
+export async function readList<T>(get: () => Promise<T[]>, what: ReadFailure["what"]): Promise<Read<T>> {
   try {
     const items = await get();
-    return Array.isArray(items) ? { items } : { error, detail: "" };
+    return Array.isArray(items) ? { items } : { what, detail: "" };
   } catch (e) {
-    return { error, detail: errorText(e, "") };
+    return { what, detail: errorText(e, "") };
   }
 }

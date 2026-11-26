@@ -14,7 +14,7 @@ import ReadError from "@/components/ReadError";
 import { DifficultyPicker, SortMenu, difficultyWord } from "@/components/ListControls";
 import { useT } from "@/lib/i18n";
 import { fitText } from "@/lib/engineText";
-import { readList, runDelete } from "@/lib/dataSafety";
+import { readList, runDelete, type ReadFailure } from "@/lib/dataSafety";
 import { firstPlayGoing, forgetSong, getLibrary, learnAgain, stopLearning, learnLabel, learnNow, live, type LearnJob, type LibrarySong, nowLocal, openInApp, playTrack, setFavorite, useSession } from "@/lib/session";
 
 type Filter = "all" | "favorites" | "unscored" | "partial";
@@ -115,7 +115,7 @@ export default function Library() {
     learnNow(jobs, takes, song, track);   // (as useLearn)
   const settled = takes.filter(tk => tk.status !== "learning" && tk.status !== "scoring").length;
   // a read that fails shows as that (with a retry), never as "Nothing learned yet"
-  const [readErr, setReadErr] = useState<{ error: string; detail: string } | null>(null);
+  const [readErr, setReadErr] = useState<ReadFailure | null>(null);
   const [tries, setTries] = useState(0);
   useEffect(() => {
     readList(getLibrary, "songs").then(r => {

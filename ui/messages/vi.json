@@ -9,7 +9,6 @@
       "label": "Ngôn ngữ",
       "sub": "Ngôn ngữ OnKey hiển thị. Tự động theo ngôn ngữ của máy tính.",
       "autoNamed": "Tự động ({language})",
-      "autoOs": "{language} ({os, select, mac {ngôn ngữ của máy Mac} other {ngôn ngữ của máy PC này}})",
       "early": "Sơ bộ",
       "earlyNote": "Lời các bài hát bằng {language} hiện chưa được canh thời gian theo từng từ. Muốn góp sức? <link>Cải thiện bản dịch này.</link>",
       "credits": "Dịch bởi {names}"

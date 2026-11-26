@@ -7,7 +7,8 @@ import { learnNow, learnTakes } from "./learnState";
 import { updateArrived } from "./perf";
 import { SAME_SONG_MS, startingView, type Starting, type StartingView } from "./starting";
 import { demoFrom, type DemoSong } from "./demo";
-import { setLanguageSetting, t } from "./i18n";
+import { locales, setLanguageSetting, t } from "./i18n";
+import { DEFAULT_LOCALE } from "./languages";
 import { EngineError } from "./engineText";
 export { firstPlayGoing, learnNow, learnOf } from "./learnState";
 
@@ -654,10 +655,27 @@ export async function setScoringLevel(level: "relaxed" | "steady" | "pro") {
   if (inApp()) await invoke("set_scoring_level", { level });
 }
 
-/** The window's language: a code ("en", "zh"…) or "auto" (the computer's own). Shown at once, kept across restarts. */
+const LANGUAGE_KEY = "onkey.locale";
+
+/** The browser's saved choice, also used by older desktop builds before native language settings. */
+export function storedLanguage(): string | null {
+  try {
+    const saved = localStorage.getItem(LANGUAGE_KEY);
+    if (saved === "zh") return DEFAULT_LOCALE;
+    return saved && (saved === "auto" || locales().includes(saved)) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep the window's language in native settings, or in browser storage outside the app. */
 export async function setLanguage(code: string) {
   setLanguageSetting(code);
-  if (inApp()) await invoke("set_language", { code }).catch(unsaved);
+  if (inApp()) {
+    await invoke("set_language", { code }).catch(unsaved);
+  } else {
+    try { localStorage.setItem(LANGUAGE_KEY, code); } catch {}
+  }
 }
 
 /** A microphone (an input device): Core Audio's id for it and its name. */

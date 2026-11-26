@@ -101,9 +101,8 @@ export function scoreWord(score: number) {
   return t(`music.scoreWord.${score >= 90 ? "superb" : score >= 80 ? "great" : score >= 65 ? "good" : score >= 45 ? "gettingThere" : "keepAtIt"}`);
 }
 
-/** When a take was sung ("1 Nov, 14:05"), in the window's language (English: the computer's own date style). */
+/** When a take was sung ("1 Nov, 14:05"), in the window's language. */
 export function when(iso: string) {
   const d = new Date(iso), loc = dateLocale();
-  return d.toLocaleDateString(loc, { day: "numeric", month: "short" }) + ", " +
-    d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(loc, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }

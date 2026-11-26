@@ -9,9 +9,8 @@
       "label": "语言",
       "sub": "OnKey 显示的文字。“自动”跟随电脑的语言。",
       "autoNamed": "自动（{language}）",
-      "autoOs": "{language}（{os, select, mac {Mac 的语言} other {这台电脑的语言}}）",
       "early": "初版",
-      "earlyNote": "{language}歌曲的歌词暂时只按行显示，没有逐字对齐。愿意帮忙？<link>改进这份翻译。</link>",
+      "earlyNote": "{language}歌曲的歌词暂时只按行显示，没有逐字对齐。<link>协助改进翻译</link>",
       "credits": "翻译：{names}"
     },
     "title": "设置",
@@ -26,7 +25,7 @@
         "nowMissingPc": "当前：{name}。你选的那个没有连接，所以 OnKey 暂时使用{input}，直到它接上为止。",
         "noneMissingMac": "<warn>没有连接麦克风。</warn>你选的那个没有连接，所以 OnKey 暂时使用 Mac 自带的输入，直到它接上为止。",
         "noneMissingPc": "<warn>没有连接麦克风。</warn>你选的那个没有连接，所以 OnKey 暂时使用{input}，直到它接上为止。",
-        "moreMac": "“自动”使用 Mac 的输入（系统设置 → 声音），但只要 Mac 有自己的麦克风，就不用蓝牙耳机的麦克风，这样耳机里的音乐能保持满质量。设置向导里的麦克风检查和你的演唱用的是同一个。其他应用添加的虚拟设备（Krisp、Loopback、BlackHole、Zoom、Teams）单独列出：只有当你确实想通过它来唱时才选它，因为它传给 OnKey 的是那个应用的声音，而不是你的麦克风。",
+        "moreMac": "“自动”使用 Mac 的输入（系统设置 → 声音），但只要 Mac 有自己的麦克风，就不用蓝牙耳机的麦克风，让耳机保持高音质播放。设置向导里的麦克风检查和你的演唱用的是同一个。其他应用添加的虚拟设备（Krisp、Loopback、BlackHole、Zoom、Teams）单独列出：只有当你确实想通过它来唱时才选它，因为它传给 OnKey 的是那个应用的声音，而不是你的麦克风。",
         "morePc": "“自动”使用{input}（{soundInput}）。设置向导里的麦克风检查和你的演唱用的是同一个。",
         "automatic": "自动",
         "virtual": "虚拟（来自其他应用）",
@@ -38,7 +37,7 @@
       },
       "setup": {
         "title": "重新运行设置向导",
-        "sub": "权限和麦克风检查，和第一天一样。"
+        "sub": "重新检查权限和麦克风。"
       }
     },
     "shortcuts": {
@@ -138,7 +137,7 @@
       }
     },
     "voice": {
-      "title": "你的嗓子",
+      "title": "用嗓习惯",
       "breaks": {
         "title": "提醒我让嗓子休息",
         "sub": "唱了大约 35 分钟后，轻声提醒你休息一下。",
@@ -1170,8 +1169,8 @@
   "nav": {
     "appName": "OnKey",
     "songsToTry": "推荐歌曲",
-    "sing": "唱歌",
-    "library": "资料库",
+    "sing": "练唱",
+    "library": "曲库",
     "history": "历史记录",
     "settings": "设置",
     "paused": "已暂停聆听",
@@ -1212,7 +1211,7 @@
     "contact": "OnKey 绝不保存它听到的音乐。版权方可通过 <email>hello@singonkey.app</email> 联系我。"
   },
   "library": {
-    "title": "资料库",
+    "title": "曲库",
     "intro": "OnKey 已学会的歌。选一首，看着前方的每个音符唱。",
     "search": "搜索歌曲",
     "empty": {

@@ -9,7 +9,6 @@
       "label": "Dil",
       "sub": "OnKey’in gösterdiği metinlerin dili. Otomatik, bilgisayarınızın dilini izler.",
       "autoNamed": "Otomatik ({language})",
-      "autoOs": "{language} ({os, select, mac {Mac’inizin dili} other {bu PC’nin dili}})",
       "early": "Erken",
       "earlyNote": "{language} şarkıların sözleri şimdilik kelime kelime zamanlama olmadan gösteriliyor. Yardım etmek ister misiniz? <link>Bu çeviriyi iyileştirin.</link>",
       "credits": "Çeviren: {names}"

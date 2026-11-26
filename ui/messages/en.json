@@ -9,7 +9,6 @@
       "label": "Language",
       "sub": "The words OnKey shows. Automatic follows your computer’s language.",
       "autoNamed": "Automatic ({language})",
-      "autoOs": "{language} ({os, select, mac {your Mac’s language} other {this PC’s language}})",
       "early": "Early",
       "earlyNote": "Lyrics for songs in {language} show without word-by-word timing for now. Want to help? <link>Improve this translation.</link>",
       "credits": "Translated by {names}"

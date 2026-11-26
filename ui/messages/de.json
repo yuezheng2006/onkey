@@ -9,7 +9,6 @@
       "label": "Sprache",
       "sub": "Die Sprache, in der OnKey mit dir spricht. „Automatisch“ folgt der Sprache deines Computers.",
       "autoNamed": "Automatisch ({language})",
-      "autoOs": "{language} ({os, select, mac {die Sprache deines Mac} other {die Sprache dieses PCs}})",
       "early": "Neu",
       "earlyNote": "Texte von Songs auf {language} erscheinen vorerst ohne Timing für jedes einzelne Wort. Du willst helfen? <link>Verbessere diese Übersetzung.</link>",
       "credits": "Übersetzt von {names}"

@@ -13,7 +13,7 @@ import Trend from "@/components/Trend";
 import { bestAtLatestLevel } from "@/components/LevelTag";
 import { changeWords, vsBefore } from "@/lib/trend";
 import VoiceRange from "@/components/VoiceRange";
-import { deleteEach, readList } from "@/lib/dataSafety";
+import { deleteEach, readList, type ReadFailure } from "@/lib/dataSafety";
 import ReadError from "@/components/ReadError";
 import { DifficultyPicker, SortMenu, pill } from "@/components/ListControls";
 import { HEART } from "@/components/Heart";
@@ -46,7 +46,7 @@ export default function History() {
   const pending = session.filter(tk => tk.status === "scoring" || tk.status === "learning");
   const finished = session.filter(tk => tk.status === "done").length;
   // a read that fails shows as that (with a retry), never as "No takes yet"
-  const [readErr, setReadErr] = useState<{ error: string; detail: string } | null>(null);
+  const [readErr, setReadErr] = useState<ReadFailure | null>(null);
   const [tries, setTries] = useState(0);
   useEffect(() => {
     readList(getTakes, "takes").then(r => { if ("items" in r) { setTakes(r.items); setReadErr(null); } else setReadErr(r); });

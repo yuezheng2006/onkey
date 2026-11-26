@@ -1,9 +1,7 @@
 "use client";
 // The language list Settings, first-run setup and the top bar's globe share, a menu in OnKey's own style (as
-// Library's sort menu, components/ListControls.tsx). At the top, the computer's own language marked as such
-// ("Português (your Mac's language)"): that row is Automatic, so OnKey follows the computer if its language changes
-// (when the computer's language isn't one OnKey ships, the row is just the language Automatic falls back to,
-// English, unmarked). Then the region's language when it's another (an English Mac set to Mexico: Español
+// Library's sort menu, components/ListControls.tsx). Automatic follows the system and remains separate from
+// explicitly choosing that language. Then the region's language when it's another (an English Mac set to Mexico: Español
 // (Latinoamérica); lib/languages.ts `welcomeOrder`), the languages OnKey fully supports, and the Early ones under their
 // own small heading. Nothing shows while there's only English (lib/languages.ts `pickerCodes`).
 //   Settings: a button showing the choice, beside the setting's words.
@@ -12,7 +10,6 @@
 import { useEffect, useRef, useState } from "react";
 import { locales, pickLocale, systemLanguages, useLocale, useSystemRegion, useT } from "@/lib/i18n";
 import { isEarly, nativeName, pickerCodes, welcomeOrder } from "@/lib/languages";
-import { useWindows } from "@/lib/platform";
 import { FloatingMenu } from "@/components/Dropdown";
 
 const Globe = ({ size }: { size: number }) => (
@@ -36,7 +33,6 @@ export default function LanguageSelect({ choice, onChange, id, welcome, globe }:
 }) {
   const t = useT();
   const shown = useLocale();
-  const win = useWindows();
   const region = useSystemRegion();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -59,16 +55,11 @@ export default function LanguageSelect({ choice, onChange, id, welcome, globe }:
   const available = pickerCodes(locales());
   if (!available) return null;
   const auto = pickLocale("auto", systemLanguages(), available);
-  // Automatic isn't a row of its own: it's the row of the language it comes to, marked as the computer's when the
-  // computer asked for it (not when OnKey fell back to English for a language it doesn't ship). Choosing that row
-  // saves "auto", so OnKey follows the computer if its language changes.
-  const computers = systemLanguages().some(l => l.toLowerCase().split("-")[0] === auto.toLowerCase().split("-")[0]);
-  const rest = welcomeOrder(available, auto, region).filter(c => c !== auto);
+  const rest = welcomeOrder(available, auto, region);
   const full = rest.filter(c => !isEarly(c));
   const early = rest.filter(c => isEarly(c));
   const current = available.includes(choice) ? choice : "auto";
-  const autoRow = computers ? t("settings.language.autoOs", { language: nativeName(auto), os: win ? "pc" : "mac" }) : nativeName(auto);
-  const autoLabel = welcome || globe ? autoRow : t("settings.language.autoNamed", { language: nativeName(auto) });
+  const autoLabel = t("settings.language.autoNamed", { language: nativeName(auto) });
 
   const pick = (code: string) => { setOpen(false); button.current?.focus(); if (code !== current) onChange(code); };
   const move = (e: React.KeyboardEvent) => {
@@ -81,7 +72,7 @@ export default function LanguageSelect({ choice, onChange, id, welcome, globe }:
   };
   items.current = [];
   const item = (code: string, label: string, langAttr?: string) => {
-    const on = current === code || (code === "auto" && current === auto);
+    const on = current === code;
     return (
       <button key={code} ref={b => { items.current.push(b); }} role="menuitemradio" aria-checked={on} lang={langAttr}
               onClick={() => pick(code)}
@@ -117,7 +108,7 @@ export default function LanguageSelect({ choice, onChange, id, welcome, globe }:
       {open && (
         <FloatingMenu anchor={button} inside={menu} onClose={() => setOpen(false)} role="menu" aria-label={t("settings.language.label")} onKeyDown={move}
              className="w-64 overflow-y-auto rounded-2xl border border-white/10 bg-ink-900/98 p-1 shadow-xl shadow-black/50">
-          {item("auto", autoRow, auto)}
+          {item("auto", autoLabel)}
           <div className="mx-3 my-1 h-px bg-white/8" role="separator" />
           {full.map(c => item(c, nativeName(c), c))}
           {early.length > 0 && (

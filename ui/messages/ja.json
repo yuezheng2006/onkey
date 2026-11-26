@@ -9,7 +9,6 @@
       "label": "言語",
       "sub": "OnKeyが表示する言葉。「自動」はパソコンの言語に合わせます。",
       "autoNamed": "自動（{language}）",
-      "autoOs": "{language}（{os, select, mac {Macの言語} other {このPCの言語}}）",
       "early": "初期対応",
       "earlyNote": "{language}の曲の歌詞は、今のところ単語ごとのタイミングなしで表示されます。手伝っていただけますか？<link>この翻訳を改善する</link>",
       "credits": "翻訳：{names}"

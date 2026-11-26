@@ -9,7 +9,6 @@
       "label": "Idioma",
       "sub": "O idioma dos textos do OnKey. Automático segue o idioma do seu computador.",
       "autoNamed": "Automático ({language})",
-      "autoOs": "{language} ({os, select, mac {o idioma do seu Mac} other {o idioma deste PC}})",
       "early": "Inicial",
       "earlyNote": "Por enquanto, a letra de músicas em {language} aparece sem a sincronia palavra por palavra. Quer ajudar? <link>Melhore esta tradução.</link>",
       "credits": "Traduzido por {names}"

@@ -601,10 +601,6 @@
       "why": "new: the picker's Automatic names the language it comes to"
     },
     {
-      "prefix": "settings.language.autoOs",
-      "why": "new (1 Nov 2026): first-run setup's language list names Automatic by the language it comes to and whose computer's it is (\"English (your Mac’s language)\"); lib/languages.test.mjs covers the list's order"
-    },
-    {
       "prefix": "settings.language.early",
       "why": "new: the Early tag and its note (the plan's wording, lab/later/languages.md)"
     },

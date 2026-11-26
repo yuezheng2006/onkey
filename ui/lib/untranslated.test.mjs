@@ -1,6 +1,6 @@
 // npm test: no text in the window that skips the catalog. Every .tsx in app/ and components/ is read with the
 // TypeScript compiler, and these fail: JSX text with a letter in it, and a string with a letter in it that's shown
-// as it is: a title/aria-label/placeholder/alt attribute, or a string inside a JSX {…} (also through ?:, && and ||).
+// as it is: a title, accessibility text, placeholder or alt attribute, or a string inside a JSX {…} (also through ?:, && and ||).
 // Such text goes in messages/en.json and is shown with t("…"). Exceptions, each with why: untranslated.allow.json
 // (dev-only tools, which stay English, and text that isn't words in any language).
 import { test } from "node:test";
@@ -13,7 +13,7 @@ import ts from "typescript";
 const UI = fileURLToPath(new URL("..", import.meta.url));
 const allow = JSON.parse(readFileSync(join(UI, "lib/untranslated.allow.json"), "utf8"));
 const LETTER = /\p{L}/u;
-const ATTRS = new Set(["title", "aria-label", "placeholder", "alt"]);
+const ATTRS = new Set(["title", "aria-label", "aria-description", "aria-roledescription", "aria-valuetext", "placeholder", "alt"]);
 
 const walk = dir => readdirSync(dir).flatMap(n => {
   const p = join(dir, n);
@@ -69,6 +69,6 @@ test("no window text outside the catalog (messages/en.json)", () => {
 });
 
 test("the check finds what it should", () => {
-  const src = `const A = () => <p title="Hi" aria-label={x ? "On" : "Off"} className="text-sm">Hello {name}<b>{busy && "Saving…"}</b>{"·"}{t("k")}</p>;`;
-  assert.deepEqual(untranslated("x.tsx", src).map(s => s.replace(/^\d+: /, "")), ['"Hi"', '"On"', '"Off"', '"Hello"', '"Saving…"']);
+  const src = `const A = () => <p title="Hi" aria-label={x ? "On" : "Off"} aria-valuetext="Progress" className="text-sm">Hello {name}<b>{busy && "Saving…"}</b>{"·"}{t("k")}</p>;`;
+  assert.deepEqual(untranslated("x.tsx", src).map(s => s.replace(/^\d+: /, "")), ['"Hi"', '"On"', '"Off"', '"Progress"', '"Hello"', '"Saving…"']);
 });

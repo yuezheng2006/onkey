@@ -5,10 +5,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createTranslator } from "use-intl/core";
-import { flatten, getLocale, locales, message, pickLocale, pseudoCatalog, PSEUDO, registerCatalog, setLanguageSetting, setLocale,
+import { TYPE } from "@formatjs/icu-messageformat-parser";
+import { dateLocale, flatten, getLocale, locales, message, pickLocale, pseudoCatalog, PSEUDO, registerCatalog, setLanguageSetting, setLocale,
   setSystemLanguages, setSystemRegion, systemLanguages, systemRegion, t, tidy, unregisterCatalog } from "./i18n.ts";
 import { catalogProblems, paramNames, parse, runs } from "./i18nCheck.ts";
 import { TRANSLATIONS } from "./catalogs.ts";
+import { setLanguage, storedLanguage } from "./session.ts";
 
 /** One message formatted the way the window does (use-intl), in English. */
 const tr = (msg, values) => createTranslator({ locale: "en", messages: { m: msg }, onError: e => { throw e; } })("m", values);
@@ -95,6 +97,75 @@ test("Simplified Chinese is the default, with English and Automatic still select
   setSystemLanguages(null);
 });
 
+test("both Chinese catalogs contain Chinese text and keep every named ICU choice", () => {
+  const neutral = new Set([
+    "OnKey", "OnKey {version}", "Spotify", "Apple Music", "Linux", "Windows", "macOS",
+    "A4", "A–Z", "{db} dB", "{n} B", "{n} KB", "{n} MB", "you@example.com",
+    "{app} ↗", "Apple Music ↗", "{level}（{n}/5）", "{stage}，{pct}%",
+  ]);
+  const choices = (nodes, options = new Map()) => {
+    for (const n of nodes) {
+      if (n.type === TYPE.select) {
+        const keys = options.get(n.value) ?? new Set();
+        for (const k of Object.keys(n.options)) keys.add(k);
+        options.set(n.value, keys);
+      }
+      if ("options" in n) for (const o of Object.values(n.options)) choices(o.value, options);
+      if ("children" in n) choices(n.children, options);
+    }
+    return options;
+  };
+  for (const locale of ["zh-Hans", "zh-Hant"]) {
+    const catalog = flatten(read(`${locale}.json`));
+    for (const [key, english] of flatten(en)) {
+      const msg = catalog.get(key);
+      assert.ok(neutral.has(msg) || /\p{Script=Han}/u.test(runs(msg).join("")), `${locale}: ${key}`);
+      assert.deepEqual(choices(parse(msg)), choices(parse(english)), `${locale}: ${key}`);
+    }
+  }
+});
+
+test("browser language choices persist and old Simplified Chinese preferences migrate", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const data = new Map();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) },
+  });
+  try {
+    assert.equal(storedLanguage(), null);
+    data.set("onkey.locale", "zh");
+    assert.equal(storedLanguage(), "zh-Hans");
+    data.set("onkey.locale", "not-a-locale");
+    assert.equal(storedLanguage(), null);
+    for (const code of ["en", "zh-Hant", "zh-Hans", "auto"]) {
+      await setLanguage(code);
+      assert.equal(storedLanguage(), code);
+    }
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+    else delete globalThis.localStorage;
+    setLanguageSetting(null);
+  }
+});
+
+test("dates follow the app language and retain an English regional format when available", () => {
+  try {
+    setSystemLanguages(["zh_CN.UTF-8"]);
+    setLanguageSetting("en");
+    assert.equal(dateLocale(), "en");
+    setSystemLanguages(["zh-CN", "en_GB.UTF-8"]);
+    assert.equal(dateLocale(), "en-GB");
+    setLanguageSetting("zh-Hans");
+    assert.equal(dateLocale(), "zh-Hans");
+    setLanguageSetting("zh-Hant");
+    assert.equal(dateLocale(), "zh-Hant");
+  } finally {
+    setSystemLanguages(null);
+    setLanguageSetting(null);
+  }
+});
+
 test("the language: Settings' choice, else the computer's, else English", () => {
   const have = ["en", "zh", "pt", "es-419"];
   assert.equal(pickLocale("auto", ["zh-CN", "en-GB"], have), "zh", "the computer's (zh-CN → zh)");
@@ -115,6 +186,9 @@ test("the language: Settings' choice, else the computer's, else English", () => 
   assert.equal(pick("es-ES"), "es-ES", "Spain: its own");
   assert.equal(pick("es_ES"), "es-ES", "an underscore");
   assert.equal(pick("zh-TW"), "zh-Hant");
+  assert.equal(pick("zh_TW.UTF-8"), "zh-Hant");
+  assert.equal(pick("zh_Hans_CN.UTF-8"), "zh-Hans");
+  assert.equal(pick("es-ES-x-custom"), "es-ES");
   assert.equal(pick("zh-HK"), "zh-Hant");
   assert.equal(pick("zh-MO"), "zh-Hant");
   assert.equal(pick("zh-Hant-TW"), "zh-Hant", "macOS's form");

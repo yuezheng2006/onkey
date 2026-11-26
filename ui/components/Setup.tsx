@@ -164,8 +164,8 @@ function Permissions({ mic, audio, onAudioAllowed, refresh, onNext, canContinue 
       <p className="mt-4 text-xs leading-relaxed text-ink-500">
         {t("setup.permissions.reopen")}
       </p>
-      <div className="mt-6 flex items-center justify-between">
-        <Quiet onClick={onNext}>{canContinue ? "" : t("setup.permissions.skip")}</Quiet>
+      <div className={`mt-6 flex items-center ${canContinue ? "justify-end" : "justify-between"}`}>
+        {!canContinue && <Quiet onClick={onNext}>{t("setup.permissions.skip")}</Quiet>}
         <Primary onClick={onNext} disabled={!canContinue}>{t("setup.permissions.continue")}</Primary>
       </div>
     </>

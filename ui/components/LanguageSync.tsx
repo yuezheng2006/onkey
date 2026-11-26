@@ -1,9 +1,8 @@
 "use client";
 // Load the window's saved language and the computer's locale for Automatic and the Welcome picker.
 import { useEffect } from "react";
-import { getSettings, setLanguage, uiLocale, uiRegion } from "@/lib/session";
+import { getSettings, setLanguage, storedLanguage, uiLocale, uiRegion } from "@/lib/session";
 import { languageSetting, setLanguageSetting, setSystemLanguages, setSystemRegion } from "@/lib/i18n";
-import { DEFAULT_LOCALE } from "@/lib/languages";
 
 export default function LanguageSync() {
   useEffect(() => {
@@ -17,13 +16,9 @@ export default function LanguageSync() {
         setLanguageSetting(s.language);
         return;
       }
-      let legacy: string | null = null;
-      try { legacy = localStorage.getItem("onkey.locale"); } catch {}
-      if (legacy === "zh" || legacy === "en") {
-        const migrated = legacy === "zh" ? DEFAULT_LOCALE : "en";
-        if (s) void setLanguage(migrated).catch(() => {});
-        else setLanguageSetting(migrated);
-      }
+      const saved = storedLanguage();
+      if (saved && s) void setLanguage(saved).catch(() => {});
+      else if (saved) setLanguageSetting(saved);
     });
     // the computer's language changed (matters when "auto"; the browser says so, the app's WebView may not)
     const changed = () => void readOs().then(() => setLanguageSetting(languageSetting()));

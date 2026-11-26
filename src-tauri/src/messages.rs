@@ -141,6 +141,18 @@ mod tests {
     }
 
     #[test]
+    fn chinese_menus_sharing_and_permission_prompts_do_not_fall_back() {
+        let all = catalogs();
+        for lang in ["zh-Hans", "zh-Hant"] {
+            for (key, english) in &all["en"] {
+                let translated = all[lang].get(key).unwrap_or_else(|| panic!("{lang}: missing {key}"));
+                assert_ne!(translated, english, "{lang}: {key} still uses English");
+                assert!(translated.chars().any(|c| ('\u{3400}'..='\u{9fff}').contains(&c)), "{lang}: {key} has no Chinese text");
+            }
+        }
+    }
+
+    #[test]
     fn a_missing_key_falls_back_to_english_and_an_unknown_one_to_itself() {
         assert_eq!(in_lang("xx", "menu.app.quit"), "Quit OnKey", "no such language: English");
         assert_eq!(in_lang("en", "no.such.key"), "no.such.key");

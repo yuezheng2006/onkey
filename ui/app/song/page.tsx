@@ -14,7 +14,7 @@ import NoLyrics from "@/components/NoLyrics";
 import { deleteTake, getTakes, learnAgain, learnLabel, live, playTrack, type LearnAgainState, type TakeSummary, useLearn, useSession } from "@/lib/session";
 import { levelAbout, levelName, levelOf, scoreWord, when } from "@/lib/music";
 import { lastVsFirst } from "@/lib/trend";
-import { readList } from "@/lib/dataSafety";
+import { readList, type ReadFailure } from "@/lib/dataSafety";
 import ReadError from "@/components/ReadError";
 import { useT } from "@/lib/i18n";
 
@@ -27,7 +27,7 @@ function Song() {
   const id = useSearchParams().get("id") ?? "";
   const [takes, setTakes] = useState<TakeSummary[] | null>(null);
   // a read that fails shows as that (with a retry), never as "No plays of this song yet"
-  const [readErr, setReadErr] = useState<{ error: string; detail: string } | null>(null);
+  const [readErr, setReadErr] = useState<ReadFailure | null>(null);
   const [tries, setTries] = useState(0);
   useEffect(() => {
     readList(getTakes, "takes").then(r => { if ("items" in r) { setTakes(r.items); setReadErr(null); } else setReadErr(r); });

@@ -9,7 +9,6 @@
       "label": "語言",
       "sub": "OnKey 顯示的文字。「自動」會跟著電腦的語言。",
       "autoNamed": "自動（{language}）",
-      "autoOs": "{language}（{os, select, mac {Mac 的語言} other {這台電腦的語言}}）",
       "early": "初版",
       "earlyNote": "{language}歌曲的歌詞目前只會逐行顯示，沒有逐字對齊。想幫忙嗎？<link>改進這份翻譯。</link>",
       "credits": "翻譯：{names}"

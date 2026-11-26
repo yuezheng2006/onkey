@@ -9,7 +9,6 @@
       "label": "Bahasa",
       "sub": "Bahasa yang ditampilkan OnKey. Otomatis mengikuti bahasa komputer Anda.",
       "autoNamed": "Otomatis ({language})",
-      "autoOs": "{language} ({os, select, mac {bahasa Mac Anda} other {bahasa PC ini}})",
       "early": "Tahap awal",
       "earlyNote": "Lirik lagu berbahasa {language} untuk sementara ditampilkan tanpa pewaktuan per kata. Ingin membantu? <link>Perbaiki terjemahan ini.</link>",
       "credits": "Diterjemahkan oleh {names}"

@@ -39,6 +39,6 @@ test("a read that fails is an error, never an empty list", async () => {
   assert.deepEqual(await readList(async () => [1, 2], "takes"), { items: [1, 2] });
   assert.deepEqual(await readList(async () => [], "takes"), { items: [] });
   assert.deepEqual(await readList(() => Promise.reject("couldn't read the takes folder (Permission denied)"), "takes"),
-                   { error: "Couldn’t read your takes", detail: "couldn't read the takes folder (Permission denied)" });
-  assert.deepEqual(await readList(async () => null, "songs"), { error: "Couldn’t read your songs", detail: "" });
+                   { what: "takes", detail: "couldn't read the takes folder (Permission denied)" });
+  assert.deepEqual(await readList(async () => null, "songs"), { what: "songs", detail: "" });
 });

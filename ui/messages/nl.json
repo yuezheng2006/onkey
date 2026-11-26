@@ -9,7 +9,6 @@
       "label": "Taal",
       "sub": "De taal waarin OnKey met je praat. Automatisch volgt de taal van je computer.",
       "autoNamed": "Automatisch ({language})",
-      "autoOs": "{language} ({os, select, mac {de taal van je Mac} other {de taal van deze pc}})",
       "early": "Voorlopig",
       "earlyNote": "Songteksten van nummers in het {language} verschijnen voorlopig zonder timing per woord. Wil je helpen? <link>Verbeter deze vertaling.</link>",
       "credits": "Vertaald door {names}"
