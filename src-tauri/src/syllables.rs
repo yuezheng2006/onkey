@@ -2,7 +2,10 @@
 //! with the singer) is forced-aligned on the separated lead vocal with a speech model (wav2vec2, English
 //! characters), words are split into syllables (CMU pronouncing dictionary counts, hyphenation for the text),
 //! each syllable starts where its first letter was heard, and gets the singer's pitch over it. Port of an
-//! earlier Python prototype.
+//! earlier Python prototype. [lyrics-ml] Spanish, Portuguese, Italian, French and German lyrics (lang.rs detects
+//! the language from the text) have their syllables counted and split by their own spelling rules; a song in
+//! another script (Han, Kana, Hangul, Devanagari...) is left with LRCLIB's lines and no bars, and the word timer
+//! isn't run on it at all (lang::alignable).
 use std::collections::HashMap;
 
 use hyphenation::{Hyphenator, Language, Load, Standard};
@@ -27,8 +30,16 @@ impl Syllabifier {
         Syllabifier { counts, hyph: Standard::from_embedded(Language::EnglishUS).expect("hyphenation patterns") }
     }
 
+    /// A word's syllables in `lang`: English as `split` (unchanged); the other languages by lang::syllables.
+    pub fn split_in(&self, word: &str, lang: crate::lang::Lang) -> Vec<String> {
+        match lang {
+            crate::lang::Lang::En => self.split(word),
+            other => crate::lang::syllables(word, other),
+        }
+    }
+
     /// "beautiful" -> ["beau", "ti", "ful"]: the number of syllables from the dictionary (or vowel groups),
-    /// the split points from hyphenation, merged or split to match the count.
+    /// the split points from hyphenation, merged or split to match the count. (English.)
     pub fn split(&self, word: &str) -> Vec<String> {
         let w: String = word.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || *c == '\'').collect();
         let k = self.counts.get(&w).map(|k| *k as usize).unwrap_or_else(|| {
@@ -69,18 +80,34 @@ impl Syllabifier {
 
 pub struct WordAligner {
     session: Session,
+    /// on DirectML (Windows): how to go to the CPU should a run fail there
+    gpu: Option<crate::gpu::Fallback>,
 }
 
 impl WordAligner {
     pub fn load(path: &std::path::Path, threads: usize) -> Result<WordAligner, String> {
-        let session = Session::builder().and_then(|b| b.with_optimization_level(GraphOptimizationLevel::Level3))
-            .and_then(|b| b.with_intra_threads(threads)).and_then(crate::pitch::lean).and_then(|b| b.commit_from_file(path))
-            .map_err(|e| format!("loading {}: {e}", path.display()))?;
-        Ok(WordAligner { session })
+        let options = move |b: ort::session::builder::SessionBuilder| b.with_optimization_level(GraphOptimizationLevel::Level3)
+            .and_then(|b| b.with_intra_threads(threads)).and_then(crate::pitch::lean);
+        let loading = |e: ort::Error| format!("loading {}: {e}", path.display());
+        // (on Windows on DirectML when it can be: gpu.rs)
+        let (session, gpu) = crate::gpu::load("words", path, options).map_err(loading)?;
+        Ok(WordAligner { session, gpu })
     }
 
     /// Log-probabilities (frames × 29 characters) for 16 kHz audio, and seconds per frame.
     fn logprobs(&mut self, audio: &[f32]) -> Result<(Vec<f32>, f64), String> {
+        let r = self.logprobs_here(audio);
+        // (on the CPU from now on, if it failed on DirectML)
+        if let Err(e) = &r {
+            if let Some(f) = self.gpu.take() {
+                self.session = f.to_cpu(e).map_err(|e| e.to_string())?;
+                return self.logprobs_here(audio);
+            }
+        }
+        r
+    }
+
+    fn logprobs_here(&mut self, audio: &[f32]) -> Result<(Vec<f32>, f64), String> {
         let x = ndarray::Array2::from_shape_vec((1, audio.len()), audio.to_vec()).map_err(|e| e.to_string())?;
         let out = self.session.run(ort::inputs!["audio" => ort::value::Tensor::from_array(x).map_err(|e| e.to_string())?])
             .map_err(|e| e.to_string())?;
@@ -109,12 +136,68 @@ pub struct Inputs<'a> {
 
 /// A lyric line's words without bracketed parts (backing vocals sung over the lead).
 fn lead_words(text: &str) -> Vec<String> {
+    lead_words_with(text, fold_on())
+}
+
+fn lead_words_with(text: &str, fold: bool) -> Vec<String> {
     let mut clean = String::new();
     let mut depth = 0;
     for c in text.chars() {
         match c { '(' => depth += 1, ')' => { depth = 0usize.max(depth - 1) }, _ if depth == 0 => clean.push(c), _ => {} }
     }
-    clean.split_whitespace().filter(|w| w.chars().any(|c| c.is_ascii_alphabetic())).map(str::to_string).collect()
+    clean.split_whitespace().filter(|w| w.chars().any(|c| c.is_ascii_alphabetic()) || (fold && fold_upper(w).chars().any(|c| c.is_ascii_uppercase())))
+        .map(str::to_string).collect()
+}
+
+/// [latin-timing] Accented Latin letters are folded to A-Z before the English aligner sees them ("corazón" ->
+/// CORAZON, "Straße" -> STRASSE, "cœur" -> COEUR); the lab measured this harmless for Spanish and German and a
+/// little better for French (bench/align/ml_score.py). English lyrics are untouched (an occasional "café" becomes
+/// CAFE rather than CAF). ONKEY_FOLD=0 turns it off: accented letters are dropped (CORAZN), as before 1 Nov 2026.
+fn fold_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| crate::devtest::knob!("ONKEY_FOLD").as_deref() != Some("0"))   // (a dev-build knob: always on in a release)
+}
+
+/// A word in upper case with diacritics folded to A-Z (other characters kept as they are).
+fn fold_upper(w: &str) -> String {
+    let mut out = String::with_capacity(w.len());
+    for c in w.to_uppercase().chars() {
+        match c {
+            'Á' | 'À' | 'Â' | 'Ä' | 'Ã' | 'Å' | 'Ā' | 'Ă' | 'Ą' => out.push('A'),
+            'Æ' => out.push_str("AE"),
+            'Ç' | 'Ć' | 'Č' => out.push('C'),
+            'Ď' | 'Đ' => out.push('D'),
+            'É' | 'È' | 'Ê' | 'Ë' | 'Ē' | 'Ė' | 'Ę' | 'Ě' => out.push('E'),
+            'Í' | 'Ì' | 'Î' | 'Ï' | 'Ī' | 'Į' => out.push('I'),
+            'Ł' => out.push('L'),
+            'Ñ' | 'Ń' | 'Ň' => out.push('N'),
+            'Ó' | 'Ò' | 'Ô' | 'Ö' | 'Õ' | 'Ø' | 'Ō' | 'Ő' => out.push('O'),
+            'Œ' => out.push_str("OE"),
+            'Ř' => out.push('R'),
+            'Ś' | 'Š' | 'Ş' => out.push('S'),
+            'ẞ' => out.push_str("SS"),
+            'Ť' | 'Ţ' => out.push('T'),
+            'Ú' | 'Ù' | 'Û' | 'Ü' | 'Ū' | 'Ů' | 'Ű' => out.push('U'),
+            'Ý' | 'Ÿ' => out.push('Y'),
+            'Ź' | 'Ż' | 'Ž' => out.push('Z'),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// A word as the aligner's letters see it: upper case, accents folded to A-Z (unless ONKEY_FOLD=0).
+fn upper(w: &str) -> String {
+    if fold_on() { fold_upper(w) } else { w.to_uppercase() }
+}
+
+/// The letters a syllable gives the aligner (counted like the tokens: A-Z and the apostrophe).
+fn letter_count(p: &str) -> usize {
+    if fold_on() {
+        fold_upper(p).chars().filter(|c| c.is_ascii_uppercase() || *c == '\'').count()
+    } else {
+        p.chars().filter(|c| c.is_ascii_alphabetic() || *c == '\'').count()
+    }
 }
 
 /// Where each lyric line is really sung: the whole song's lyrics forced-aligned at once on the lead vocal.
@@ -131,11 +214,21 @@ pub type Heard = Vec<Option<Vec<(usize, usize, f64, f64)>>>;
 /// place_lines, and when each letter of the lines it placed was heard.
 pub fn place_lines_heard(aligner: &mut WordAligner, vocal16: &[f32], song_offset: f64, lyrics: &[(f64, String)]) -> Option<(Vec<(f64, String)>, Heard)> {
     let (logp, times) = song_logprobs(aligner, vocal16, song_offset)?;
+    let times: Vec<f64> = times.into_iter().map(|t| t - HEARD_LAG_S).collect();
     place_on(&logp, &times, (song_offset, song_offset + vocal16.len() as f64 / 16_000.0), lyrics).map(|(l, h, _)| (l, h))
 }
 
 /// The word timer's stretch (s), see song_logprobs.
 const WORDS_CHUNK_S: usize = 10;
+
+/// How late the word timer hears a letter after it's sung (s): a learned song's line-up moves every frame's time back
+/// by this (not a first play's live line-up: its words are lit by a pace spread from the line's start that is made to
+/// run early already, and 0.05 s earlier lines cost JamendoLyrics' first plays 2.4 points of the right word lit). Measured
+/// [align-night] 26 Oct on the align eval: line starts heard by the whole-song alignment sit a median +0.04 s
+/// (JamendoLyrics' hand-marked onsets, 287 lines) and +0.055 s (the library's silver truth, 43 lines) after the
+/// singing, words +0.05 / +0.07 s; 0.05 s centres them (more starts lines early, which is fine, but words drift
+/// early: JamendoLyrics' word AAE grows past 0.08 s).
+const HEARD_LAG_S: f64 = 0.05;
 
 /// The word aligner's log-probabilities for the whole vocal, 10 s at a time, and each frame's song time.
 /// (10 s, not 20: the word timer's activations grow with the stretch it's given, and they were the learning's peak
@@ -182,7 +275,7 @@ fn place_on(logp: &[f32], times: &[f64], (t0, t1): (f64, f64), lyrics: &[(f64, S
         }
         let from = toks.len();
         for (wi, w) in lead_words(text).iter().enumerate() {
-            let cs: Vec<usize> = w.to_uppercase().chars().filter_map(|c| idx.get(&c).copied()).filter(|&c| c > 1).collect();
+            let cs: Vec<usize> = upper(w).chars().filter_map(|c| idx.get(&c).copied()).filter(|&c| c > 1).collect();
             if cs.is_empty() {
                 continue;
             }
@@ -271,19 +364,21 @@ fn section_moves(placed: &[(usize, f64)], n: usize) -> Vec<f64> {
     }).collect()
 }
 
-/// How the words heard moved the lines when a song was learned: one offset for the song plus a steady drift (a
-/// version at another speed), and how many of the lines heard agree with it.
+/// How the words heard moved the lines when a song was learned: one offset plus a steady drift (a version at another
+/// speed), for the whole song or for each of its sections, and how many of the lines heard agree with it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Fit {
-    /// s, at the song's start
+    /// s, at the song's start (of the song's first section when there are several)
     pub offset: f64,
-    /// s per s of song (within 2%)
+    /// s per s of song (within 2%, or 6% when two thirds of the lines agree; the first section's when several)
     pub drift: f64,
     /// lines heard that move with the fit (within 0.6 s), and lines heard
     pub agree: usize,
     pub heard: usize,
     /// whether the fit was believed (else LRCLIB's times are kept as given)
     pub believed: bool,
+    /// sections of the song fitted on their own (1: the whole song moves together; 0: not believed)
+    pub sections: usize,
 }
 
 /// Lines placed (song s), when each letter was heard (where believed), and the fit that decided.
@@ -298,6 +393,9 @@ pub type Placement = (Vec<(f64, String)>, Heard, Fit);
 /// where they were heard; every other line moves with the fit. Without such a fit LRCLIB's times are kept
 /// (the live line-up and sing mode refine them). Lines keep LRCLIB's order and at least half its spacing (up
 /// to 0.5 s): never bunched.
+///
+/// Two more fits are tried when that one fails (fit_sections), for lyrics timed on another version or timed badly:
+/// a faster drift, and the song in sections either side of an instrumental break, each with its own offset.
 pub fn place_lines_checked(aligner: &mut WordAligner, vocal16: &[f32], song_offset: f64, lyrics: &[(f64, String)]) -> Option<Placement> {
     place_lines_checked_and_heard(aligner, vocal16, song_offset, lyrics).map(|p| p.0)
 }
@@ -309,12 +407,30 @@ pub fn place_lines_checked_and_heard(aligner: &mut WordAligner, vocal16: &[f32],
     Some((check_placement(lyrics, placed, heard), all))
 }
 
-/// The consistency check of place_lines_checked, on its placement.
-pub fn check_placement(lyrics: &[(f64, String)], placed: Vec<(f64, String)>, mut heard: Heard) -> Placement {
-    let pts: Vec<(usize, f64, f64)> = (0..lyrics.len()).filter(|&i| heard[i].is_some() && lyrics[i].1.chars().any(|c| c.is_alphanumeric()))
-        .map(|i| (i, lyrics[i].0, placed[i].0 - lyrics[i].0)).collect();
+/// The steadiest drift a whole song's lines are believed to have, in thousandths (2%), and the fastest (6%), which
+/// needs two thirds of the lines heard to agree.
+const DRIFT_MAX: i32 = 20;
+const DRIFT_MAX_WIDE: i32 = 60;
+
+/// The shortest break between two lyric lines (s, LRCLIB's times) at which a song may be split into sections that
+/// each move on their own: an instrumental break, where another version of the song can be longer or shorter.
+const SECTION_GAP_S: f64 = 15.0;
+
+/// A stretch of the song whose lines move together: lines given at `from` s or later (until the next section) go to
+/// their given time + `offset` + `drift` x given time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Section {
+    from: f64,
+    offset: f64,
+    drift: f64,
+    agree: usize,
+}
+
+/// The offset and drift (within `max` thousandths) most of `pts` (line, given time, heard start - given time) agree
+/// with within 0.6 s: (lines agreeing, offset, drift).
+fn fit_line(pts: &[(usize, f64, f64)], max: i32) -> (usize, f64, f64) {
     let mut best = (0usize, f64::MAX, 0.0f64, 0.0f64);           // (agree, their error, offset, drift)
-    for k in -20..=20 {
+    for k in -max..=max {
         let b = k as f64 * 0.001;
         let mut r: Vec<f32> = pts.iter().map(|p| (p.2 - b * p.1) as f32).collect();
         if r.is_empty() {
@@ -327,26 +443,109 @@ pub fn check_placement(lyrics: &[(f64, String)], placed: Vec<(f64, String)>, mut
             best = (n, err, a, b);
         }
     }
-    let (agree, _, a, b) = best;
-    let mid = pts.iter().map(|p| p.1).sum::<f64>() / pts.len().max(1) as f64;
-    let big = (a + b * mid).abs() > 3.0;
-    let believed = agree >= 4 && 2 * agree >= pts.len() && (!big || 3 * agree >= 2 * pts.len());
-    let (a, b) = if believed { (a, b) } else { (0.0, 0.0) };
+    (best.0, best.2, best.3)
+}
+
+/// The fit of the lines heard (`pts`: line, given time, heard start - given time) that is believed, as the song's
+/// sections in order; empty when none is. `worded` are the given times of every lyric line with words, in order.
+///   1. the whole stretch on one offset and a drift within 2%: half the lines heard (4 or more) agree, two thirds
+///      when it moves them more than 3 s (or `strict`);
+///   2. the same with a drift within 6%, two thirds agreeing: lyrics timed on a version at another speed, or timed
+///      carelessly (issue #2: Keane's Everybody's Changing, an entry running 7 s ahead by the end, 21 of 24 lines
+///      on +5.8%);
+///   3. split at its longest break between lyric lines (15 s or more, an instrumental), each side believed by
+///      these same rules (strictly, and split once more at most): lyrics timed on a version with a longer or
+///      shorter break (issue #2: Marillion's Sugar Mice with a live album's entry, 2 s late before the guitar solo
+///      and 9 s late after it).
+/// Checked on the library's 197 learned songs (11 Nov): the 22 that rule 1 doesn't believe (packed lines, ramps of
+/// 10-50%) aren't believed by rules 2 and 3 either.
+fn fit_sections(pts: &[(usize, f64, f64)], worded: &[f64], strict: bool, splits: usize) -> Vec<Section> {
+    let believed = |agree: usize, a: f64, b: f64, strict: bool| {
+        let mid = pts.iter().map(|p| p.1).sum::<f64>() / pts.len().max(1) as f64;
+        let big = (a + b * mid).abs() > 3.0;
+        agree >= 4 && 2 * agree >= pts.len() && (!(big || strict) || 3 * agree >= 2 * pts.len())
+    };
+    let from = worded.first().copied().unwrap_or(0.0);
+    let (agree, a, b) = fit_line(pts, DRIFT_MAX);
+    if believed(agree, a, b, strict) {
+        return vec![Section { from, offset: a, drift: b, agree }];
+    }
+    let (agree, a, b) = fit_line(pts, DRIFT_MAX_WIDE);
+    if believed(agree, a, b, true) {
+        return vec![Section { from, offset: a, drift: b, agree }];
+    }
+    if splits == 0 {
+        return Vec::new();
+    }
+    // the longest break between lyric lines (the first of equals)
+    let Some(k) = (1..worded.len()).filter(|&k| worded[k] - worded[k - 1] >= SECTION_GAP_S)
+        .reduce(|x, y| if worded[y] - worded[y - 1] > worded[x] - worded[x - 1] { y } else { x }) else { return Vec::new() };
+    let cut = pts.partition_point(|p| p.1 < worded[k]);
+    if cut < 4 || pts.len() - cut < 4 {
+        return Vec::new();
+    }
+    let mut left = fit_sections(&pts[..cut], &worded[..k], true, splits - 1);
+    let right = fit_sections(&pts[cut..], &worded[k..], true, splits - 1);
+    if left.is_empty() || right.is_empty() {
+        return Vec::new();
+    }
+    left.extend(right);
+    left
+}
+
+/// The consistency check of place_lines_checked, on its placement.
+pub fn check_placement(lyrics: &[(f64, String)], placed: Vec<(f64, String)>, mut heard: Heard) -> Placement {
+    let worded: Vec<usize> = (0..lyrics.len()).filter(|&i| lyrics[i].1.chars().any(|c| c.is_alphanumeric())).collect();
+    let pts: Vec<(usize, f64, f64)> = worded.iter().filter(|&&i| heard[i].is_some()).map(|&i| (i, lyrics[i].0, placed[i].0 - lyrics[i].0)).collect();
+    // (given times in order, as LRCLIB's are: the sections are cut on them)
+    let ordered = lyrics.windows(2).all(|w| w[0].0 <= w[1].0);
+    let times: Vec<f64> = worded.iter().map(|&i| lyrics[i].0).collect();
+    let sections = fit_sections(&pts, &times, false, if ordered { 2 } else { 0 });
+    let believed = !sections.is_empty();
+    // without a believed fit, the one most lines agree with is reported (and nothing moves)
+    let (agree, a0, b0) = if believed { (sections.iter().map(|s| s.agree).sum(), sections[0].offset, sections[0].drift) } else {
+        let (n, _, _) = fit_line(&pts, DRIFT_MAX);
+        (n, 0.0, 0.0)
+    };
+    // the section a line given at `g` belongs to (lines before the first section's start go with it)
+    let moved = |g: f64| -> f64 {
+        match sections.iter().rev().find(|s| s.from <= g).or(sections.first()) {
+            Some(s) => g + s.offset + s.drift * g,
+            None => g,
+        }
+    };
     let mut out: Vec<(f64, String)> = Vec::with_capacity(lyrics.len());
     for (i, (g, text)) in lyrics.iter().enumerate() {
-        let fit = g + a + b * g;
+        let fit = moved(*g);
         let inlier = heard[i].is_some() && (placed[i].0 - fit).abs() <= 0.6;
         if !inlier {
             heard[i] = None;
         }
-        let mut t = if inlier { placed[i].0 } else { fit };
+        // a line that opens on a sung vowel ("oh oh ...", "whoa"): the aligner hears the vowel late, or not at all and
+        // starts the line at its first word, so the line goes no later than the fit puts it
+        let mut t = if inlier && opens_on_vowel(text) { placed[i].0.min(fit) } else if inlier { placed[i].0 } else { fit };
         if let (Some(prev), Some(pg)) = (out.last(), i.checked_sub(1).map(|j| lyrics[j].0)) {
             let gap = (0.5 * (g - pg)).clamp(0.0, 0.5);
             t = t.max(prev.0 + gap);
         }
         out.push((t.max(0.0), text.clone()));
     }
-    (out, heard, Fit { offset: a, drift: b, agree, heard: pts.len(), believed })
+    (out, heard, Fit { offset: a0, drift: b0, agree, heard: pts.len(), believed, sections: sections.len() })
+}
+
+/// Whether a lyric line opens on a sung vowel or filler ("Oh, you and I", "whoa oh oh", "aw ah"), letters doubled or
+/// not. The whole-song alignment starts those lines late: on the align eval [align-night] 29% of them heard more
+/// than 0.3 s late (Kinematic's "oh oh ..." lines by 0.8-1.1 s, Daniel Powter, Ben E. King, Ridgway), against 2.7% of
+/// other lines.
+fn opens_on_vowel(text: &str) -> bool {
+    let Some(w) = lead_words(text).into_iter().next() else { return false };
+    let mut d = String::new();
+    for c in w.chars().skip_while(|c| !c.is_alphabetic()).take_while(|c| c.is_alphabetic()).flat_map(|c| c.to_lowercase()) {
+        if !d.ends_with(c) {
+            d.push(c);
+        }
+    }
+    matches!(d.as_str(), "oh" | "ah" | "aw" | "whoa" | "woah" | "yeah" | "hey" | "na" | "la" | "m" | "uh" | "ha" | "eh")
 }
 
 /// How well a line's words are heard in the singer between song seconds `a` and `b` (the mean probability of its
@@ -359,7 +558,7 @@ pub fn line_confidence(aligner: &mut WordAligner, vocal16: &[f32], song_offset: 
     }
     let mut toks = Vec::new();
     for w in lead_words(text) {
-        let cs: Vec<usize> = w.to_uppercase().chars().filter_map(|c| idx.get(&c).copied()).filter(|&c| c > 1).collect();
+        let cs: Vec<usize> = upper(&w).chars().filter_map(|c| idx.get(&c).copied()).filter(|&c| c > 1).collect();
         if cs.is_empty() {
             continue;
         }
@@ -388,6 +587,13 @@ pub struct LiveLineUp {
     /// (a low quantile, so a word filled by it comes early rather than late); None if too few words were heard
     pub pace: Option<f64>,
 }
+
+/// The least a live line-up's lines must be heard (the mean probability of their letters along the alignment) to be
+/// shown. Forced alignment puts every word it's given somewhere, so lines can agree on a move where they aren't sung:
+/// on the align eval [align-night] every line-up believed with a wrong move was heard 0.02-0.21 (Third Eye Blind's
+/// first play: 3 lines "agreeing" on -8.3 s at 0.19, every line after it then 9-10 s early all song; Zara Larsson
+/// -8.1 s at 0.17; Tom Odell -11.8 s at 0.07; Coldplay's Clocks -4.4 s at 0.02), every right one 0.25 or more.
+const LIVE_MIN_HEARD: f32 = 0.23;
 
 /// Seconds of the most recent separated singer a live line-up listens to (bounded work, however long the play).
 pub const LIVE_WINDOW_S: f64 = 40.0;
@@ -419,6 +625,12 @@ pub fn line_up_live(aligner: &mut WordAligner, vocal16: &[f32], song_offset: f64
     // nothing to hear yet (an intro: no line due within 12 s of the window, however far off LRCLIB is): no work
     if !given.iter().any(|(t, s)| !s.trim().is_empty() && t + prior > off - 12.0 && t + prior < end + 12.0) {
         trace("no line due in the window".into());
+        return None;
+    }
+    // lyrics in another script (Mandarin, Japanese, Korean...): the English word timer can't hear them, and
+    // LRCLIB's times are kept as they are, so no model pass (lang::alignable)
+    if !crate::lang::alignable(given) {
+        trace("lyrics aren't in Latin letters".into());
         return None;
     }
     let Some((logp, times)) = song_logprobs(aligner, &vocal16[from..], off) else {
@@ -473,6 +685,10 @@ pub fn line_up_live(aligner: &mut WordAligner, vocal16: &[f32], song_offset: f64
                 let heard_conf: Vec<f32> = (0..given.len()).filter(|&i| heard[i].is_some()).filter_map(|i| conf[i]).collect();
                 let c = heard_conf.iter().sum::<f32>() / heard_conf.len().max(1) as f32;
                 trace(format!("guess {guess:+.2}: {agree} of {} lines agree on {moved:+.2}, heard {c:.2}", moves.len()));
+                if c < LIVE_MIN_HEARD {
+                    trace(format!("guess {guess:+.2}: heard {c:.2}, under {LIVE_MIN_HEARD}: words forced onto singing that isn't them"));
+                    break;
+                }
                 if !found.as_ref().is_some_and(|f| c <= f.0) {
                     found = Some((c, LiveLineUp { lyrics: keep_shown(shown, &placed, now), heard: agree, moved, pace: pace(given, &heard) }));
                 }
@@ -533,6 +749,7 @@ pub fn pace(lyrics: &[(f64, String)], heard: &Heard) -> Option<f64> {
     static SYL: std::sync::Mutex<Option<Syllabifier>> = std::sync::Mutex::new(None);
     let mut g = SYL.lock().unwrap();
     let syl = g.get_or_insert_with(Syllabifier::new);
+    let langs = crate::lang::line_langs(lyrics);
     let mut steps: Vec<f32> = Vec::new();
     for (i, h) in heard.iter().enumerate() {
         let Some(h) = h else { continue };
@@ -546,7 +763,7 @@ pub fn pace(lyrics: &[(f64, String)], heard: &Heard) -> Option<f64> {
         }
         starts.sort_by_key(|w| w.0);
         for p in starts.windows(2) {
-            let n = words.get(p[0].0).map_or(1, |w| syl.split(w).len().max(1));
+            let n = words.get(p[0].0).map_or(1, |w| syl.split_in(w, langs[i]).len().max(1));
             let d = p[1].1 - p[0].1;
             if p[1].0 == p[0].0 + 1 && d > 0.0 && d < 3.0 {
                 steps.push((d / n as f64) as f32);
@@ -584,6 +801,12 @@ pub fn make(aligner: &mut WordAligner, syl: &Syllabifier, inp: &Inputs) -> Vec<S
     let voiced: Vec<f32> = inp.line.iter().copied().filter(|v| !v.is_nan()).collect();
     let register = if voiced.is_empty() { 60.0 } else { median(&mut voiced.clone()) };
     let mut bars: Vec<(i64, i64, Option<f32>, String)> = Vec::new();
+    // the language of each line (lang.rs): how its words split into syllables (ONKEY_SYL_LANG=en: every line as
+    // English, the way it was before [lyrics-ml], for the lab to compare: examples/barsml)
+    let langs = match crate::devtest::knob!("ONKEY_SYL_LANG").as_deref() {
+        Some("en") => vec![crate::lang::Lang::En; inp.lyrics.len()],
+        _ => crate::lang::line_langs(inp.lyrics),
+    };
     for (i, (t, text)) in inp.lyrics.iter().enumerate() {
         crate::progress::advance(i, inp.lyrics.len());     // (the window's progress bar)
         // bracketed parts are backing vocals sung over the lead: no bars for them
@@ -615,11 +838,10 @@ pub fn make(aligner: &mut WordAligner, syl: &Syllabifier, inp: &Inputs) -> Vec<S
                 if s0 < 0 || s1 as usize > inp.vocal16.len() || s1 - s0 < 8000 {
                     return None;
                 }
-                let (logp, ratio) = aligner.logprobs(&inp.vocal16[s0 as usize..s1 as usize]).ok()?;
                 let mut toks = Vec::new();
                 let mut owners: Vec<(usize, usize)> = Vec::new();      // (word, letter index within the word)
                 for (wi, w) in words.iter().enumerate() {
-                    let cs: Vec<usize> = w.to_uppercase().chars().filter_map(|c| idx.get(&c).copied()).filter(|&c| c > 1).collect();
+                    let cs: Vec<usize> = upper(w).chars().filter_map(|c| idx.get(&c).copied()).filter(|&c| c > 1).collect();
                     if cs.is_empty() {
                         continue;
                     }
@@ -632,6 +854,11 @@ pub fn make(aligner: &mut WordAligner, syl: &Syllabifier, inp: &Inputs) -> Vec<S
                         owners.push((wi, li));
                     }
                 }
+                // (no letter the timer knows, as in a line in another script: no model run for it)
+                if toks.is_empty() {
+                    return None;
+                }
+                let (logp, ratio) = aligner.logprobs(&inp.vocal16[s0 as usize..s1 as usize]).ok()?;
                 let spans = crate::ctc::align(&logp, LABELS.len(), &toks, 0)?;
                 let mut wspan: HashMap<usize, (f64, f64)> = HashMap::new();
                 let mut lstart: HashMap<(usize, usize), f64> = HashMap::new();
@@ -654,13 +881,13 @@ pub fn make(aligner: &mut WordAligner, syl: &Syllabifier, inp: &Inputs) -> Vec<S
             // a word lasts until the next word starts, if that's soon (singers hold the vowel)
             let nxt0 = wspan.iter().filter(|(k, _)| **k > wi).map(|(_, v)| v.0).fold(w1 + 0.4, f64::min);
             w1 = w1.max(nxt0.min(w1 + 0.8));
-            let parts = syl.split(w);
+            let parts = syl.split_in(w, langs[i]);
             let f0 = (w0 * 100.0) as i64;
             let f1 = (w1 * 100.0) as i64;
             let seg: Vec<f32> = (f0..f1).map(|f| inp.line.get(f as usize).copied().unwrap_or(f32::NAN)).collect();
             let len = seg.len() as i64;
             // where each later syllable starts: when the aligner heard its first letter; else even
-            let letters: Vec<usize> = parts.iter().map(|p| p.chars().filter(|c| c.is_ascii_alphabetic() || *c == '\'').count()).collect();
+            let letters: Vec<usize> = parts.iter().map(|p| letter_count(p)).collect();
             let mut cuts = Vec::new();
             let mut pos = 0;
             for k in 1..parts.len() {
@@ -883,8 +1110,9 @@ pub fn refine_with_notes_where_heard(bars: &[SyllableBar], notes: &[(f64, f64, f
 /// syllables; elsewhere the bars stay as they are.
 pub fn relabel(bars: &mut [(i64, i64, i32, String)], lyrics: &[(f64, String)]) {
     let syl = Syllabifier::new();
+    let langs = crate::lang::line_langs(lyrics);
     for (i, (t, text)) in lyrics.iter().enumerate() {
-        let parts: Vec<String> = lead_words(text).iter().flat_map(|w| syl.split(w)).collect();
+        let parts: Vec<String> = lead_words(text).iter().flat_map(|w| syl.split_in(w, langs[i])).collect();
         if parts.is_empty() {
             continue;
         }
@@ -933,6 +1161,152 @@ pub fn merge_play(old_lyrics: &[(f64, String)], new_lyrics: &[(f64, String)], pl
 #[cfg(test)]
 mod tests {
     use super::keep_shown;
+
+    /// [lyrics-ml] The English syllable splitter as it was before the languages work (1 Nov 2026), kept here so
+    /// the regression below can show the English path is byte-identical over the whole dictionary.
+    fn old_split(syl: &super::Syllabifier, word: &str) -> Vec<String> {
+        use hyphenation::Hyphenator;
+        let w: String = word.to_lowercase().chars().filter(|c| c.is_ascii_lowercase() || *c == '\'').collect();
+        let k = syl.counts.get(&w).map(|k| *k as usize).unwrap_or_else(|| {
+            let groups = w.split(|c: char| !"aeiouy".contains(c)).filter(|g| !g.is_empty()).count();
+            (groups - usize::from(w.ends_with('e') && w.len() > 3 && groups > 1)).max(1)
+        });
+        let lower = word.to_lowercase();
+        let mut parts: Vec<String> = if lower.len() == word.len() {
+            let h = syl.hyph.hyphenate(&lower);
+            let mut v = Vec::new();
+            let mut last = 0;
+            for &b in &h.breaks {
+                v.push(word[last..b].to_string());
+                last = b;
+            }
+            v.push(word[last..].to_string());
+            v
+        } else {
+            vec![word.to_string()]
+        };
+        while parts.len() > k {
+            let last = parts.pop().unwrap();
+            parts.last_mut().unwrap().push_str(&last);
+        }
+        while parts.len() < k {
+            let i = (0..parts.len()).max_by_key(|&j| parts[j].chars().count()).unwrap();
+            let p: Vec<char> = parts[i].chars().collect();
+            if p.len() < 2 {
+                break;
+            }
+            let h = p.len() / 2;
+            let (a, b): (String, String) = (p[..h].iter().collect(), p[h..].iter().collect());
+            parts.splice(i..=i, [a, b]);
+        }
+        parts
+    }
+
+    #[test]
+    fn english_syllables_are_as_they_were_over_the_whole_dictionary() {
+        let syl = super::Syllabifier::new();
+        let mut n = 0;
+        for w in include_str!("../data/syllables-en.txt").lines().filter_map(|l| l.split_once(' ').map(|p| p.0)) {
+            let want = old_split(&syl, w);
+            assert_eq!(syl.split(w), want, "{w}");
+            assert_eq!(syl.split_in(w, crate::lang::Lang::En), want, "{w}");
+            n += 1;
+        }
+        assert!(n > 100_000, "{n} words");
+        // and words as lyrics have them (capitals, punctuation, accents, contractions)
+        for w in ["Beautiful,", "DON'T", "café", "whoa-oh", "I'm", "ev'ry", "Yeah!", "x", "---", "corazón"] {
+            assert_eq!(syl.split(w), old_split(&syl, w), "{w}");
+        }
+    }
+
+    #[test]
+    fn other_languages_split_by_their_own_rules() {
+        use crate::lang::Lang;
+        let syl = super::Syllabifier::new();
+        // the English path has these wrong (one syllable: the dictionary's "come", a final e dropped, accents lost)
+        assert_eq!(syl.split("come").len(), 1);
+        assert_eq!(syl.split("vive").len(), 1);
+        assert_eq!(syl.split_in("come", Lang::Es), vec!["co", "me"]);
+        assert_eq!(syl.split_in("vive", Lang::Es), vec!["vi", "ve"]);
+        assert_eq!(syl.split_in("amore", Lang::It), vec!["a", "mo", "re"]);
+        assert_eq!(syl.split_in("Liebe", Lang::De), vec!["Lie", "be"]);
+        assert_eq!(syl.split_in("coração", Lang::Pt), vec!["co", "ra", "ção"]);
+        assert_eq!(syl.split_in("chanson", Lang::Fr), vec!["chan", "son"]);
+        // the letters a syllable gives the aligner add up to the word's, however it's split (folding included)
+        for (w, l) in [("Straße", Lang::De), ("cœur,", Lang::Fr), ("corazón", Lang::Es), ("você", Lang::Pt), ("perché", Lang::It)] {
+            let parts = syl.split_in(w, l);
+            assert_eq!(parts.iter().map(|p| super::letter_count(p)).sum::<usize>(), super::letter_count(w), "{w}");
+            assert_eq!(parts.concat(), w);
+        }
+    }
+
+    #[test]
+    fn folds_accented_latin_letters() {
+        use super::fold_upper;
+        assert_eq!(fold_upper("corazón"), "CORAZON");
+        assert_eq!(fold_upper("Niño"), "NINO");
+        assert_eq!(fold_upper("Straße"), "STRASSE");
+        assert_eq!(fold_upper("über"), "UBER");
+        assert_eq!(fold_upper("garçon"), "GARCON");
+        assert_eq!(fold_upper("cœur"), "COEUR");
+        assert_eq!(fold_upper("Æble"), "AEBLE");
+        assert_eq!(fold_upper("smørbrød"), "SMORBROD");
+        assert_eq!(fold_upper("Åse"), "ASE");
+        assert_eq!(fold_upper("être,"), "ETRE,");
+        assert_eq!(fold_upper("l'été"), "L'ETE");
+        assert_eq!(fold_upper("plain"), "PLAIN");
+        // every folded letter is one the English aligner has
+        let all = "áàâäãåāăąæçćčďđéèêëēėęěíìîïīįłñńňóòôöõøōőœřśšşßťţúùûüūůűýÿźżž";
+        assert!(fold_upper(all).chars().all(|c| c.is_ascii_uppercase()), "{}", fold_upper(all));
+        assert!(fold_upper(&all.to_uppercase()).chars().all(|c| c.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn folded_lead_words_keep_accent_only_words() {
+        use super::lead_words_with;
+        assert_eq!(lead_words_with("voy à la mer (ó)", false), vec!["voy", "la", "mer"]);
+        assert_eq!(lead_words_with("voy à la mer (ó)", true), vec!["voy", "à", "la", "mer"]);
+        assert_eq!(lead_words_with("¡Óyeme tiburón!", true), vec!["¡Óyeme", "tiburón!"]);
+        assert_eq!(lead_words_with("- 123 é", true), vec!["é"]);
+    }
+
+    #[test]
+    fn folding_is_on_unless_turned_off() {
+        // the default (ONKEY_FOLD unset, or anything but "0"): on
+        if crate::devtest::knob!("ONKEY_FOLD").as_deref() != Some("0") {
+            assert!(super::fold_on());
+            assert_eq!(super::upper("corazón"), "CORAZON");
+            assert_eq!(super::letter_count("ñón"), 3);
+        }
+    }
+
+    #[test]
+    fn folding_leaves_english_as_it_was() {
+        use super::{fold_upper, lead_words_with};
+        // plain English (A-Z, apostrophes, punctuation): folded and unfolded are the same letters, words and counts
+        let line = "Oh, you and I don't know (hey) what's goin' on - it's 2 AM, baby!";
+        for w in line.split_whitespace() {
+            assert_eq!(fold_upper(w), w.to_uppercase(), "{w}");
+            assert_eq!(fold_upper(w).chars().filter(|c| c.is_ascii_uppercase() || *c == '\'').count(),
+                       w.chars().filter(|c| c.is_ascii_alphabetic() || *c == '\'').count(), "{w}");
+        }
+        assert_eq!(lead_words_with(line, true), lead_words_with(line, false));
+        // the odd accented word in English keeps all its letters rather than losing the accented one
+        assert_eq!(fold_upper("café"), "CAFE");
+        assert_eq!(fold_upper("naïve"), "NAIVE");
+        assert_eq!(fold_upper("fiancée"), "FIANCEE");
+        assert_eq!(lead_words_with("at the café, naïve", true), vec!["at", "the", "café,", "naïve"]);
+    }
+
+    #[test]
+    fn lines_opening_on_a_sung_vowel() {
+        for l in ["oh oh and the clothes that you wear", "Oh, you and I", "Whoa-oh", "Ooh, baby", "aw ah aw ah", "(Hey) yeah yeah"] {
+            assert!(super::opens_on_vowel(l), "{l}");
+        }
+        for l in ["Only you", "Hello", "Ahead of time", "", "(oh) only you"] {
+            assert!(!super::opens_on_vowel(l), "{l}");
+        }
+    }
 
     #[test]
     fn a_live_line_up_never_moves_a_line_already_shown() {
@@ -999,10 +1373,54 @@ mod tests {
         m[0] = 0.0;
         m[1] = 0.0;
         assert!(check(&m).2.believed);
+        assert_eq!(check(&m).2.sections, 1);
         // lines heard bunched together keep at least half LRCLIB's spacing (0.5 s at most)
         let m = [0.0, 0.0, 0.0, 0.0, 0.0, -3.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         let (out, _, _) = check(&m);
         assert!(out[5].0 >= out[4].0 + 0.5 - 1e-9);
+    }
+
+    /// Issue #2 (0.3.0, 10 Nov): lyrics timed on another version of the song, or timed badly. The moves are the ones
+    /// the word timer heard on the two songs reported, with the entries LRCLIB gave the reporter.
+    #[test]
+    fn a_learned_placement_follows_a_longer_break_and_a_fast_drift() {
+        use super::check_placement;
+        let check = |given: &[f64], moves: &[f64]| {
+            let lyrics: Vec<(f64, String)> = given.iter().enumerate().map(|(i, t)| (*t, format!("line {i}"))).collect();
+            let placed = lyrics.iter().zip(moves).map(|(l, m)| (l.0 + m, l.1.clone())).collect();
+            let heard: super::Heard = (0..lyrics.len()).map(|_| Some(vec![(0usize, 0usize, 0.0, 0.0)])).collect();
+            check_placement(&lyrics, placed, heard)
+        };
+        // Sugar Mice with a live album's entry: 2 s late up to the guitar solo, 9 s late after it (80 s without a line)
+        let given = [17.07, 25.05, 33.08, 41.04, 49.02, 57.02, 64.08, 88.06, 96.05, 103.04, 112.0, 119.06, 126.01, 133.07,
+                     225.08, 233.01, 240.04, 248.02, 254.01, 278.06, 285.06, 292.05, 300.01, 308.07, 315.02, 322.09, 329.03];
+        let moves = [-1.8, -1.9, -1.8, -1.8, -2.0, -2.2, -2.2, -2.5, -2.2, -1.4, -2.2, -1.5, -1.4, -2.3,
+                     -9.3, -9.5, -9.4, -8.8, -8.7, -9.6, -9.1, -8.5, -9.1, -9.3, -9.1, -8.9, -8.4];
+        let (out, heard, fit) = check(&given, &moves);
+        assert!(fit.believed && fit.sections == 2 && fit.agree >= 25, "{fit:?}");
+        assert!((out[0].0 - (17.07 - 1.8)).abs() < 1e-9 && (out[14].0 - (225.08 - 9.3)).abs() < 1e-9, "{out:?}");
+        assert!(heard[14].is_some());
+        // one side of the break heard all over the place: nothing is believed, LRCLIB's times are kept
+        let mut bad = moves;
+        for (k, m) in bad.iter_mut().skip(14).enumerate() {
+            *m = -3.0 * k as f64;
+        }
+        let (out, _, fit) = check(&given, &bad);
+        assert!(!fit.believed && fit.sections == 0, "{fit:?}");
+        assert!(out.iter().zip(&given).all(|(o, g)| o.0 == *g));
+        // the same moves without a break between the lines (4 s apart): not two sections
+        let close: Vec<f64> = (0..27).map(|i| 10.0 + 4.0 * i as f64).collect();
+        assert!(!check(&close, &moves).2.believed);
+        // Everybody's Changing with an entry that runs ahead, 7 s by the end (5.8%)
+        let given = [23.2, 32.92, 43.29, 47.29, 52.57, 62.74, 67.04, 72.14, 76.48, 81.05, 101.19, 104.48, 111.03,
+                     120.96, 125.31, 130.38, 134.69, 139.71, 164.08, 168.31, 173.25, 177.95, 182.25, 191.87];
+        let moves = [-0.4, -1.0, -1.4, -0.4, -0.4, 0.3, 0.7, 0.7, 1.1, 1.5, 2.0, 1.6, 1.6, 3.3, 3.7, 3.7, 4.2, 4.1, 6.1, 6.7, 6.8, 6.9, 7.5, 7.2];
+        let (out, _, fit) = check(&given, &moves);
+        assert!(fit.believed && fit.sections == 1 && fit.agree >= 20 && (fit.drift - 0.058).abs() < 0.006, "{fit:?}");
+        assert!((out[22].0 - (182.25 + 7.5)).abs() < 1e-9);
+        // lines packed ever closer by a wrong alignment (a ramp of 40%): never a drift
+        let ramp: Vec<f64> = given.iter().map(|g| -0.4 * (g - 23.2)).collect();
+        assert!(!check(&given, &ramp).2.believed);
     }
 
     #[test]

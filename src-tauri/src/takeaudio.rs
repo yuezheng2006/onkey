@@ -5,18 +5,14 @@
 //!
 //! Kept: every take's recording, under a safety cap of `AUDIO_CAP` for all of them together (`retain`): past it the
 //! oldest takes' recordings go first, never a favourite song's or a song's best take (the scores stay in History).
-use std::ffi::{c_char, CString};
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde_json::Value;
 
-extern "C" {
-    fn onkey_aac_write(samples: *const i16, frames: i64, rate: f64, path: *const c_char) -> i32;
-    fn onkey_aac_convert(src: *const c_char, dst: *const c_char) -> i32;
-    fn onkey_audio_decode(path: *const c_char, out: *mut f32, cap: i64, frames: *mut i64, rate: *mut f64, channels: *mut i32) -> i32;
-}
+use crate::platform::native::*;
 
 /// A take's recording, as saved now.
 pub const M4A: &str = "mic.m4a";
@@ -55,7 +51,8 @@ fn atomically(path: &Path, write: impl FnOnce(&Path) -> std::io::Result<()>) -> 
     let tmp = crate::store::temp_beside(path)?;
     let done = (|| {
         write(&tmp)?;
-        std::fs::File::open(&tmp)?.sync_all()?;
+        // (opened for writing: Windows refuses to flush a file opened only for reading, "Access is denied")
+        std::fs::OpenOptions::new().write(true).open(&tmp)?.sync_all()?;
         std::fs::rename(&tmp, path)
     })();
     if done.is_err() {
@@ -64,12 +61,15 @@ fn atomically(path: &Path, write: impl FnOnce(&Path) -> std::io::Result<()>) -> 
     done
 }
 
-/// 16-bit mono samples at `rate` to AAC at `path` (mono, ~64 kbps; resampled to 48 kHz when AAC doesn't take the
-/// rate), atomically.
-pub fn write_m4a(path: &Path, samples: &[i16], rate: f64) -> std::io::Result<()> {
+/// A take's recording, in bits/s: small, and clear enough for a voice heard once.
+pub const TAKE_BIT_RATE: u32 = 64_000;
+
+/// 16-bit mono samples at `rate` to AAC at `path` (mono, about `bit_rate` bits/s; resampled to 48 kHz when AAC
+/// doesn't take the rate), atomically.
+pub fn write_m4a(path: &Path, samples: &[i16], rate: f64, bit_rate: u32) -> std::io::Result<()> {
     atomically(path, |tmp| {
         let c = cpath(tmp)?;
-        core_audio(unsafe { onkey_aac_write(samples.as_ptr(), samples.len() as i64, rate, c.as_ptr()) }, "encoding AAC")
+        core_audio(unsafe { onkey_aac_write(samples.as_ptr(), samples.len() as i64, rate, bit_rate, c.as_ptr()) }, "encoding AAC")
     })
 }
 
@@ -147,15 +147,10 @@ pub fn convert(dir: &Path) -> Result<Converted, String> {
     Ok(Converted::Done { wav: wav_len, m4a: std::fs::metadata(&m4a).map(|m| m.len()).unwrap_or(0) })
 }
 
-/// Temp files left in a take's folder by a write that never finished (another run's: not this process's).
+/// Temp files left in a take's folder by a write that never finished: the store's sweep, so another OnKey (or a lab
+/// tool) writing there now never has one taken from under it (only another run's, over ten minutes old).
 fn sweep_temp(dir: &Path) {
-    let mine = format!("{}{}-", crate::store::TMP_MARK, std::process::id());
-    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') && name.contains(crate::store::TMP_MARK) && !name.contains(&mine) && e.path().is_file() {
-            let _ = std::fs::remove_file(e.path());
-        }
-    }
+    crate::store::sweep_temp_files(dir);
 }
 
 /// Every take folder, oldest first (their names start with the time).
@@ -188,9 +183,7 @@ fn quiet() -> bool {
 /// (the ones most likely played back). Progress goes to the log. Then the recordings are kept under their cap.
 pub fn start(data: PathBuf) {
     std::thread::Builder::new().name("onkey-take-audio".into()).spawn(move || {
-        unsafe {
-            libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_BACKGROUND, 0);
-        }
+        crate::platform::sys::background_thread();
         std::thread::sleep(AFTER_LAUNCH);
         let mut todo: Vec<PathBuf> = take_dirs(&data);
         for d in &todo {
@@ -333,17 +326,24 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_os = "linux", ignore = "no AAC encoder on Linux yet")]
     fn a_take_encodes_to_mono_aac_of_the_same_length_that_decodes() {
         let d = tmp("roundtrip");
+        // the rate it decodes at, and the bit rate it's at: Core Audio's AAC takes 8-48 kHz and 64 kbps; Microsoft's
+        // takes 44.1 or 48 kHz only (the rest resampled to 48) and 96 kbps at the least
+        #[cfg(not(windows))]
+        let (aac_rate, bit_rate) = (|rate: f64| if rate > 48_000.0 { 48_000.0 } else { rate }, 64_000);
+        #[cfg(windows)]
+        let (aac_rate, bit_rate) = (crate::platform::windows::mf::aac_rate, 96_000);
         for rate in [48_000.0, 44_100.0, 16_000.0, 96_000.0] {
             let pcm = voice(rate, 20.0);
             let p = d.join(format!("mic-{rate}.m4a"));
-            write_m4a(&p, &pcm, rate).unwrap();
+            write_m4a(&p, &pcm, rate, TAKE_BIT_RATE).unwrap();
             let got = probe(&p).unwrap();
             assert_eq!(got.channels, 1, "{rate}");
             assert!((got.seconds() - 20.0).abs() < 0.05, "{rate}: {got:?}");
             let (x, r) = decode_mono(&p).unwrap();
-            assert_eq!(r, if rate > 48_000.0 { 48_000.0 } else { rate });
+            assert_eq!(r, aac_rate(rate));
             // the sound is the sound: same loudness (within 1 dB), and in step (silent where the input is)
             let src: Vec<f32> = pcm.iter().map(|s| *s as f32 / 32768.0).collect();
             let db = 20.0 * (rms(&x) / rms(&src)).log10();
@@ -351,7 +351,7 @@ mod tests {
             let gap = (0.62 * r) as usize..(0.78 * r) as usize;      // the first gap between words (0.6-0.8 s): AAC's 44 ms of priming would show
             assert!(rms(&x[gap]) < 0.01, "{rate}: sound in a gap (out of step?)");
             let bytes = std::fs::metadata(&p).unwrap().len();
-            assert!(bytes < 20 * 64_000 / 8 * 13 / 10, "{rate}: {bytes} bytes for 20 s");
+            assert!(bytes < 20 * bit_rate / 8 * 13 / 10, "{rate}: {bytes} bytes for 20 s");
             assert!(std::fs::read_dir(&d).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().starts_with('.')), "no temp file left");
         }
         let _ = std::fs::remove_dir_all(&d);
@@ -366,6 +366,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_os = "linux", ignore = "no AAC encoder on Linux yet")]
     fn a_wav_is_converted_checked_then_deleted_and_a_bad_one_is_kept() {
         let d = tmp("convert");
         let t = d.join("20261001-120000-Song");
@@ -374,11 +375,19 @@ mod tests {
         let wav_len = std::fs::metadata(t.join(WAV)).unwrap().len();
         // a temp file left by a conversion that was killed
         std::fs::write(t.join(".mic.m4a.tmp-1-0"), b"half").unwrap();
+        // one just written (another OnKey's, still converting) is left alone; one an hour old is swept
+        std::fs::write(t.join(".mic.m4a.tmp-2-0"), b"busy").unwrap();
+        std::fs::File::options().write(true).open(t.join(".mic.m4a.tmp-1-0")).unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600)).unwrap();
         sweep_temp(&t);
         assert!(!t.join(".mic.m4a.tmp-1-0").exists());
+        assert!(t.join(".mic.m4a.tmp-2-0").exists());
+        std::fs::remove_file(t.join(".mic.m4a.tmp-2-0")).unwrap();
         let Converted::Done { wav, m4a } = convert(&t).unwrap() else { panic!("not converted") };
         assert_eq!(wav, wav_len);
-        assert!(m4a > 0 && m4a * 8 < wav, "{m4a} vs {wav}");
+        // (a 48 kHz 16-bit WAV is 768 kbps: at least 8 times a 64 kbps AAC, 6 times Windows' 96 kbps one)
+        let smaller = if cfg!(windows) { 6 } else { 8 };
+        assert!(m4a > 0 && m4a * smaller < wav, "{m4a} vs {wav}");
         assert!(!t.join(WAV).exists() && t.join(M4A).exists());
         assert!((probe(&t.join(M4A)).unwrap().seconds() - 12.0).abs() < 0.05);
         assert_eq!(recording(&t), Some(t.join(M4A)));
@@ -408,11 +417,12 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_os = "linux", ignore = "no AAC encoder on Linux yet")]
     fn a_wrong_length_aac_is_not_verified() {
         let d = tmp("verify");
         crate::engine::write_wav(&d.join(WAV), &voice(48_000.0, 3.0), 48_000).unwrap();
-        write_m4a(&d.join("long.m4a"), &voice(48_000.0, 3.1), 48_000.0).unwrap();
-        write_m4a(&d.join("same.m4a"), &voice(48_000.0, 3.0), 48_000.0).unwrap();
+        write_m4a(&d.join("long.m4a"), &voice(48_000.0, 3.1), 48_000.0, TAKE_BIT_RATE).unwrap();
+        write_m4a(&d.join("same.m4a"), &voice(48_000.0, 3.0), 48_000.0, TAKE_BIT_RATE).unwrap();
         assert!(verified(&d.join(WAV), &d.join("long.m4a")).is_err());
         assert!(verified(&d.join(WAV), &d.join("same.m4a")).is_ok());
         let _ = std::fs::remove_dir_all(&d);

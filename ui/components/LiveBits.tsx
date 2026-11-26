@@ -1,13 +1,16 @@
 "use client";
 // The pieces around the lane: lyrics, score and hint, transport controls, the takes tray and status chips.
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { TIMING_CHECK_VERIFIED } from "@/components/TimingCheck";
-import { dismissTimingHint, finishTake, learnOf, learnPct, live, playTrack, setBlind, setEchoCancel, skipToSinging, control, type Take, usePlaying, useSession } from "@/lib/session";
+import { dismissTimingHint, finishTake, setListeningPaused, learnOf, learnPct, live, playTrack, setBlind, setEchoCancel, skipToSinging, control, type Take, usePlaying, useSession } from "@/lib/session";
 import { typing } from "@/lib/keys";
 import { clock, fold } from "@/lib/music";
+import { FADE_LEVELS, guide, onGuideLevel } from "@/lib/guideFade";
 import { setDancer, useDancer } from "@/components/Dancer";
-import { useI18n } from "@/lib/i18n";
+import Cover from "@/components/Cover";
+import NoLyrics from "@/components/NoLyrics";
+import { useT } from "@/lib/i18n";
 
 /** Re-render a component every `ms` (for things derived from the live clock), only while the clock runs (see
  *  live.playing): paused, finished, nothing playing or the window hidden, once more and then no timer at all. */
@@ -33,7 +36,8 @@ function compactSize(text: string) {
 /** How far each word of the current line has been sung (0..1), from the syllable bars inside the line: each
  *  bar's syllable is matched to the line's letters in order, and fills as the bar plays. */
 function syllableFills(words: string[], song: NonNullable<typeof live.song>, start: number, end: number, t: number) {
-  const letters = (w: string) => w.toLowerCase().replace(/[^a-z0-9']/g, "");
+  // (every letter counts, accented ones too: a Spanish "zón" is three letters, as the bars' letters are)
+  const letters = (w: string) => w.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
   const wl = words.map(w => letters(w).length);
   const fills = words.map(() => 0);
   const got = words.map(() => 0);
@@ -103,27 +107,35 @@ function lineEnd(song: NonNullable<typeof live.song>, i: number) {
     for (const [s, e] of song.cacheBars) if (s >= (t0 - 0.2) * 100 && s < nx * 100 && e > end) end = e;
     if (Number.isFinite(end)) return end / 100;
   }
-  const n = lyr[i][1].trim() ? lyr[i][1].trim().split(/\s+/).length : 0;
+  // words, or the characters of a line written without spaces (Chinese, Japanese, Korean: about a syllable each)
+  const text = lyr[i][1].trim();
+  const cjk = (text.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu) || []).length;
+  const n = text ? Math.max(text.split(/\s+/).length, cjk) : 0;
   return Math.min(nx, t0 + (n ? 1 + 0.45 * n : 0));
 }
 
 export function Lyrics({ compact = false }: { compact?: boolean }) {
-  const { t: translate } = useI18n();
+  const t = useT();
   useTick(80);
   const song = live.song;
   if (!song) return null;
-  const t = live.songTime(perfNow());
+  const time = live.songTime(perfNow());
   const lyr = song.lyrics;
   // the line (and the next-line preview) changes LINE_LEAD s before it's sung; its words still fill on the singing
-  const i = live.lyricIndex(t);
+  const i = live.lyricIndex(time);
   const cur = i >= 0 ? lyr[i] : null, next = lyr[i + 1];
-  if (!lyr.length) return <p className={`text-center text-sm text-ink-400 ${compact ? "truncate" : ""}`}>{live.lyricsOn ? translate("live.noLyrics") : translate("live.lyricsOff")}</p>;
+  if (!lyr.length) {
+    // LRCLIB answered and has none: say where lyrics come from, with Look again (not in the mini bar, and not while
+    // LRCLIB is down: the Sing page's notice says so)
+    if (!compact && live.lyricsOn && song.lyricsNone && !live.status.lyrics_down) return <NoLyrics id={song.track.id} className="text-center" />;
+    return <p className={`text-center text-sm text-ink-400 ${compact ? "truncate" : ""}`}>{live.lyricsOn ? t("live.lyrics.none") : t("live.lyrics.off")}</p>;
+  }
   // the place in the song isn't settled yet: a calm wait rather than words that then jump (see live.placeReady)
   const perf = perfNow();
   if (!live.placeReady(perf)) return (
     <div className={compact ? "min-w-0 text-left" : "mx-auto max-w-4xl px-6 text-center"}>
       <div className={compact ? "" : "flex min-h-[2lh] items-end justify-center text-[clamp(1.4rem,2.6vw,2.2rem)] leading-tight"}>
-        <p className={`font-medium tracking-tight text-ink-500 ${compact ? "text-sm" : "text-[0.7em]"}`}>{translate("live.findingPlace")}</p>
+        <p className={`font-medium tracking-tight text-ink-500 ${compact ? "text-sm" : "text-[0.7em]"}`}>{t("live.lyrics.findingPlace")}</p>
       </div>
       {!compact && <p className="mt-1 min-h-[1.5rem] text-base text-ink-400">{" "}</p>}
     </div>
@@ -135,11 +147,11 @@ export function Lyrics({ compact = false }: { compact?: boolean }) {
   // with syllable bars (a learned song), each word fills exactly as its syllables' bars play; without them (a first
   // play, a song learned without them) the words' times are only a guess from the line's, which visibly didn't match
   // the singing, so the current line is shown whole, bright, with no word fill
-  const fills = !cur ? null : song.mode === "sing" && song.barText?.length ? syllableFills(words, song, cur[0], end, t) : null;
+  const fills = !cur ? null : song.mode === "sing" && song.barText?.length ? syllableFills(words, song, cur[0], end, time) : null;
   // an instrumental break (3.5 s or more from the end of this line's singing to the next line, or before the
   // first line): the next line isn't shown early; a countdown says when it comes, and it appears 3 s before
-  const wait = next ? next[0] - t : 0;
-  const brk = !!next && wait > 0 && (cur ? next[0] - lineEnd(song, i) >= 3.5 && t >= lineEnd(song, i) + 0.4 : wait >= 0);
+  const wait = next ? next[0] - time : 0;
+  const brk = !!next && wait > 0 && (cur ? next[0] - lineEnd(song, i) >= 3.5 && time >= lineEnd(song, i) + 0.4 : wait >= 0);
   if (brk) {
     const upcoming = next[1] || "♪";
     return (
@@ -154,7 +166,7 @@ export function Lyrics({ compact = false }: { compact?: boolean }) {
             </p>
           ) : (
             <p className={`font-medium tracking-tight text-ink-500 ${compact ? "text-sm" : "text-[0.7em]"}`}>
-              ♪ <span className="tabular">{cur ? translate("live.nextLine") : translate("live.firstLine")} in {Math.ceil(wait)} s</span>
+              {t.rich("live.lyrics.countdown", { which: cur ? "next" : "first", secs: Math.ceil(wait), num: c => <span className="tabular">{c}</span> })}
             </p>
           )}
         </div>
@@ -168,7 +180,8 @@ export function Lyrics({ compact = false }: { compact?: boolean }) {
       <div className={compact ? "" : "flex min-h-[2lh] items-end justify-center text-[clamp(1.4rem,2.6vw,2.2rem)] leading-tight"}>
       <p className={compact ? "font-semibold leading-snug tracking-tight" : "font-semibold tracking-tight"}
          style={compact ? { fontSize: compactSize(cur?.[1] ?? "") } : undefined}>
-        {words.map((w, k) => {
+        {/* no word fill: the line whole and bright, free to wrap anywhere (a Japanese or Chinese line has no spaces) */}
+        {!fills ? <span className={cur ? "text-ink-100 [overflow-wrap:anywhere]" : "text-ink-500"}>{words.join(" ")}</span> : words.map((w, k) => {
           const fill = fills ? fills[k] : cur ? 1 : 0;
           return (
             <span key={k} className="relative inline-block whitespace-pre">
@@ -193,14 +206,17 @@ export function Lyrics({ compact = false }: { compact?: boolean }) {
 
 // ------------------------------------------------------------------ score + hint
 export function ScoreAndHint() {
-  const { t } = useI18n();
+  const t = useT();
   const { score, song, blind } = useSession();
-  const hint = useHint();
+  const said = useHint();
+  // the guide faded (lib/guideFade.ts): "✓ On pitch" isn't said, only when you're off
+  const level = useSyncExternalStore(onGuideLevel, () => guide.level, () => 0 as const);
+  const hint = said === "ok" && !FADE_LEVELS[level].okPill ? "" : said;
   if (song?.mode === "learn" || blind) {
     return (
       <div className="text-right">
-        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">{t("live.score")}</div>
-        <div className="text-sm font-medium text-ink-300">{t("live.afterSong")}</div>
+        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">{t("live.score.label")}</div>
+        <div className="text-sm font-medium text-ink-300">{t("live.score.afterSong")}</div>
       </div>
     );
   }
@@ -208,10 +224,10 @@ export function ScoreAndHint() {
     <div className="flex items-center gap-4">
       <div className={`flex h-8 items-center rounded-full px-3 text-sm font-semibold transition-all duration-300 ${
         hint === "ok" ? "bg-good/12 text-good" : hint ? "bg-off/12 text-off" : "opacity-0"}`}>
-        {hint === "ok" ? "✓ On pitch" : hint === "up" ? "▲ Sing higher" : hint === "down" ? "▼ Sing lower" : "·"}
+        {hint === "ok" ? t("live.score.onPitch") : hint === "up" ? t("live.score.higher") : hint === "down" ? t("live.score.lower") : "·"}
       </div>
       <div className="text-right">
-        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">{t("live.score")}</div>
+        <div className="text-[10px] font-medium uppercase tracking-[.14em] text-ink-400">{t("live.score.label")}</div>
         <div className="tabular text-3xl font-bold leading-none tracking-tight">{score ?? "–"}</div>
       </div>
     </div>
@@ -249,6 +265,7 @@ function useHint() {
 
 // ------------------------------------------------------------------ transport
 export function Transport() {
+  const t = useT();
   const { status } = useSession();
   const playing = status.player?.state === "playing";
   useTick(250);
@@ -256,8 +273,8 @@ export function Transport() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (typing(e) || e.metaKey || e.ctrlKey) return;
-      if (e.code === "Space") { e.preventDefault(); control("playpause"); }
-      else if (e.key === "r" || e.key === "R") control("restart");
+      if (e.code === "Space") { e.preventDefault(); control("playpause", "Space key"); }
+      else if (e.key === "r" || e.key === "R") control("restart", "R key");
       else if (e.key === "ArrowRight") { if (!skipToSinging()) control("next"); }
       else if (e.key === "ArrowLeft") control("previous");
       else if (e.key === "b" || e.key === "B") { if (live.song?.mode === "sing") setBlind(!live.blind); }
@@ -268,13 +285,13 @@ export function Transport() {
   const btn = "grid h-9 w-9 place-items-center rounded-full text-ink-200 transition hover:bg-white/8 hover:text-white active:scale-95";
   return (
     <div className="glass flex items-center gap-1 rounded-full px-2 py-1 shadow-lg shadow-black/30">
-      <button className={btn} title="Start the song over (R)" onClick={() => control("restart")}><Icon d={ICONS.restart} /></button>
-      <button className={btn} title="Previous (←)" onClick={() => control("previous")}><Icon d={ICONS.prev} /></button>
+      <button className={btn} title={t("live.transport.restart")} onClick={() => control("restart", "restart button")}><Icon d={ICONS.restart} /></button>
+      <button className={btn} title={t("live.transport.previous")} onClick={() => control("previous")}><Icon d={ICONS.prev} /></button>
       <button className="grid h-11 w-11 place-items-center rounded-full bg-white text-ink-950 shadow transition hover:scale-105 active:scale-95"
-              title={playing ? "Pause (space)" : "Play (space)"} onClick={() => control("playpause")}>
+              title={playing ? t("live.transport.pause") : t("live.transport.play")} onClick={() => control("playpause", "play button")}>
         <Icon d={playing ? ICONS.pause : ICONS.play} filled />
       </button>
-      <button className={`${btn} ${lull ? "text-accent-300" : ""}`} title={lull ? "Skip to the singing (→)" : "Next song (→)"}
+      <button className={`${btn} ${lull ? "text-accent-300" : ""}`} title={lull ? t("live.transport.skipToSinging") : t("live.transport.next")}
               onClick={() => { if (!skipToSinging()) control("next"); }}><Icon d={ICONS.next} /></button>
     </div>
   );
@@ -302,88 +319,98 @@ export function TakesTray() {
   if (!takes.length) return null;
   return (
     <div className="pointer-events-auto flex max-w-full gap-2 overflow-x-auto pb-1">
-      {takes.slice().reverse().slice(0, 6).map((t, i) => <TakeChip key={takes.length - i} t={t} />)}
+      {takes.slice().reverse().slice(0, 6).map((tk, i) => <TakeChip key={takes.length - i} tk={tk} />)}
     </div>
   );
 }
-function TakeChip({ t }: { t: Take }) {
-  const { t: translate } = useI18n();
-  const learning = t.status === "learning";
+function TakeChip({ tk }: { tk: Take }) {
+  const t = useT();
+  const learning = tk.status === "learning";
   const { learning: jobs } = useSession();
   // how far its learning has got (src-tauri/src/progress.rs)
-  const job = learning || t.status === "scoring" ? learnOf(jobs, [], { id: t.track_id ?? "", name: t.name, artist: t.artist }) : null;
+  const job = learning || tk.status === "scoring" ? learnOf(jobs, [], { id: tk.track_id ?? "", name: tk.name, artist: tk.artist }) : null;
   const pct = job ? learnPct(job) : null;
-  const readyOnly = t.status === "learned" || t.status === "partly";
-  const right = t.status === "done" ? (
+  const readyOnly = tk.status === "learned" || tk.status === "partly";
+  const right = tk.status === "done" ? (
     <>
-      <div className="tabular text-xl font-bold leading-none">{t.score}</div>
+      <div className="tabular text-xl font-bold leading-none">{tk.score}</div>
       <div className="text-[10px] text-ink-400 group-hover:text-accent-300">
-        {t.mode === "learn" || t.blind ? "blind · " : ""}{t.notes_total ? `${t.notes_hit}/${t.notes_total} notes` : "view"} →
+        {t("live.take.done", { blind: tk.mode === "learn" || tk.blind ? "yes" : "no", hasNotes: tk.notes_total ? "yes" : "no", hit: tk.notes_hit ?? 0, total: tk.notes_total ?? 0 })}
       </div>
     </>
-  ) : t.status === "failed" ? <div className="text-xs text-off">{translate("live.couldntScore")}</div>
+  ) : tk.status === "failed" ? <div className="text-xs text-off">{t("live.take.couldntScore")}</div>
     : readyOnly ? (
-      t.status === "learned" && t.track_id ? (
-        <button onClick={e => { e.preventDefault(); playTrack(t.track_id!); }}
-                className="rounded-full bg-accent-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-accent-400">{translate("live.singNow")}</button>
-      ) : <div className="text-right text-[11px] text-ink-300">{Math.round(100 * (t.learned ?? 0))}{translate("live.learnedPct")}<br /><span className="text-ink-400">{translate("live.playThrough")}</span></div>
+      tk.status === "learned" && tk.track_id ? (
+        <button onClick={e => { e.preventDefault(); void playTrack(tk.track_id!, true, tk.name); }}
+                className="rounded-full bg-accent-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-accent-400">{t("live.take.singNow")}</button>
+      ) : <div className="text-right text-[11px] text-ink-300">{t("live.take.learnedPct", { pct: Math.round(100 * (tk.learned ?? 0)) })}<br /><span className="text-ink-400">{t("live.take.playThrough")}</span></div>
     ) : (
       <>
-        <div className="tabular text-sm font-semibold text-ink-300">{learning ? "" : t.live != null ? Math.round(t.live) : "–"}</div>
-        <div className="tabular text-[10px] text-ink-400">{pct != null ? `${translate("live.learning")} ${pct}%` : job?.stage === "queued" ? translate("live.waitingToLearn") : learning ? translate("live.learning") : translate("live.scoring")}</div>
+        <div className="tabular text-sm font-semibold text-ink-300">{learning ? "" : tk.live != null ? Math.round(tk.live) : "–"}</div>
+        <div className="tabular text-[10px] text-ink-400">{pct != null ? t("live.take.learningPct", { pct }) : job?.stage === "queued" ? t("live.take.waiting") : learning ? t("live.take.learning") : t("live.take.scoring")}</div>
       </>
     );
   const inner = (
     <div className="glass group relative flex min-w-[220px] items-center gap-3 overflow-hidden rounded-2xl px-3.5 py-2.5 animate-rise">
-      {(learning || t.status === "scoring") && pct == null && <div className="shimmer absolute inset-0" />}
+      {(learning || tk.status === "scoring") && pct == null && <div className="shimmer absolute inset-0" />}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{t.name}</div>
-        <div className="truncate text-xs text-ink-400">{t.status === "learned" ? translate("live.learnedReady") : t.artist}</div>
+        <div className="truncate text-sm font-medium">{tk.name}</div>
+        <div className="truncate text-xs text-ink-400">{tk.status === "learned" ? t("live.take.learned") : tk.artist}</div>
       </div>
       <div className="relative text-right">{right}</div>
       {pct != null && <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/6">
         <div className="h-full bg-accent-400 transition-[width] duration-500 ease-out motion-reduce:transition-none" style={{ width: `${Math.max(2, pct)}%` }} /></div>}
     </div>
   );
-  return t.status === "done" && t.report ? <Link href={`/take?id=${encodeURIComponent(t.report)}`}>{inner}</Link> : inner;
+  return tk.status === "done" && tk.report ? <Link href={`/take?id=${encodeURIComponent(tk.report)}`}>{inner}</Link> : inner;
 }
 
 // ------------------------------------------------------------------ status
 /** New headphones that are likely Bluetooth (macOS says over 100 ms) and never checked: a quiet suggestion to check
  *  their timing in Settings (macOS's figure is often short over Bluetooth), until checked or dismissed. */
 function TimingHint({ uid, name }: { uid: string; name: string }) {
+  const t = useT();
   const [gone, setGone] = useState<string | null>(null);
   if (gone === uid) return null;
   return (
     <span className="flex items-center rounded-full text-xs text-ink-400">
-      <Link href="/settings#output-timing" title="Lyrics early or late on these? Tap along to a click to measure their delay"
+      <Link href="/settings#output-timing" title={t("live.timing.title")}
             className="rounded-full px-2.5 py-1 transition hover:bg-white/6 hover:text-ink-100">
-        Check timing on <span className="inline-block max-w-32 truncate align-bottom">{name || "these headphones"}</span> ›
+        {t.rich("live.timing.check", { name: name || t("live.timing.theseHeadphones"), hl: c => <span className="inline-block max-w-32 truncate align-bottom">{c}</span> })}
       </Link>
-      <button onClick={() => { setGone(uid); void dismissTimingHint(uid); }} aria-label="Don’t suggest this again"
+      <button onClick={() => { setGone(uid); void dismissTimingHint(uid); }} aria-label={t("live.timing.dismiss")}
               className="grid h-5 w-5 place-items-center rounded-full text-ink-500 transition hover:bg-white/8 hover:text-ink-100">×</button>
     </span>
   );
 }
 
 export function StatusChips() {
-  const { t } = useI18n();
+  const t = useT();
   const { status, connected } = useSession();
   const out = status.output_ms ?? 0;
   const chip = "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-ink-300";
   return (
     <div className="flex flex-wrap items-center gap-1">
-      <span className={chip} title="Connection to the engine">
-        <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-good" : "bg-off"}`} />{connected ? t("live.live") : t("live.reconnecting")}
-      </span>
-      <span className={chip} title={`How long after the music app plays you hear it; scoring allows for it${status.output?.correction_ms != null ? " (from your timing check in Settings)" : ""}`}>
-        <Icon d={ICONS.head} size={14} />{(status.output?.reported_ms ?? out) > 100 ? t("live.bluetooth") : t("live.wired")} · {out} ms
+      {/* Live: pressed, OnKey stops listening (no take, nothing named or learned) until pressed again (also ⌘⇧P) */}
+      {!connected
+        ? <span className={chip} title={t("live.chips.connectionTitle")}><span className="h-1.5 w-1.5 rounded-full bg-off" />{t("live.chips.reconnecting")}</span>
+        : status.listening_paused
+          ? <button onClick={() => void setListeningPaused(false)} title={t("live.chips.resumeTitle")}
+                    className="flex items-center gap-1.5 rounded-full bg-notice-fill/10 px-2.5 py-1 text-xs text-notice transition hover:bg-notice-fill/16">
+              <span aria-hidden>⏸</span>{t("live.chips.paused")}</button>
+          : <button onClick={() => void setListeningPaused(true)} title={t("live.chips.pauseTitle")}
+                    className={`${chip} transition hover:bg-white/6 hover:text-ink-100`}>
+              <span className="h-1.5 w-1.5 rounded-full bg-good" />{t("live.chips.live")}</button>}
+      {/* where you hear the music: the device's name (else what kind it likely is); its delay in the tooltip */}
+      <span className={chip} title={t("live.chips.outputTitle", { device: status.output?.name || t("live.chips.thisDevice"), ms: out, checked: status.output?.correction_ms != null ? "yes" : "no" })}>
+        <Icon d={ICONS.head} size={14} />
+        <span className="max-w-44 truncate">{status.output?.name || ((status.output?.reported_ms ?? out) > 100 ? t("live.chips.bluetooth") : t("live.chips.headphones"))}</span>
       </span>
       {TIMING_CHECK_VERIFIED && status.output?.suggest && <TimingHint uid={status.output.uid} name={status.output.name} />}
       {status.mic_device !== undefined && (
-        <Link href="/settings" title="The microphone OnKey listens to (choose another in Settings)"
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${status.mic_device === null ? "text-amber-200" : "text-ink-300"}`}>
-          <Icon d={ICONS.mic} size={14} /><span className="max-w-44 truncate">{status.mic_device ?? t("live.noMicrophone")}</span>
+        <Link href="/settings" title={t("live.chips.micTitle")}
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${status.mic_device === null ? "text-notice" : "text-ink-300"}`}>
+          <Icon d={ICONS.mic} size={14} /><span className="max-w-44 truncate">{status.mic_device ?? t("live.chips.noMic")}</span>
         </Link>
       )}
     </div>
@@ -391,29 +418,29 @@ export function StatusChips() {
 }
 
 /** The switches while singing, at the bottom right (status stays at the left, so each fits on one line on a laptop):
- *  Notes ahead, Echo cancel, and Dancer (under the dancer). */
+ *  Show notes, Echo cancel, and Dancer (under the dancer). */
 export function SingSwitches() {
-  const { t } = useI18n();
+  const t = useT();
   const { status, song, blind } = useSession();
   return (
     <div className="flex flex-wrap items-center justify-end gap-1">
       {song?.mode === "sing" && (
-        <button onClick={() => setBlind(!blind)} title="Hide the notes ahead to test yourself (B)"
-                className={`flex items-center gap-2 rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${blind ? "text-ink-100" : "text-ink-300"}`}>
+        <button onClick={() => setBlind(!blind)} title={t("live.switches.blindTitle")}
+                className={`flex items-center gap-2 whitespace-nowrap rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${blind ? "text-ink-100" : "text-ink-300"}`}>
           <span className={`relative h-4 w-7 rounded-full transition ${blind ? "bg-ink-500" : "bg-accent-500"}`}>
             <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${blind ? "left-0.5" : "left-3.5"}`} />
           </span>
-          {t("live.notesAhead")}
+          {t("live.switches.showNotes")}
         </button>
       )}
       {status.echo_cancel != null && (
         <button onClick={() => setEchoCancel(!status.echo_cancel)}
-                title="Removes the music's sound from your microphone. Turn off to test with the song itself playing from speakers."
-                className={`flex items-center gap-2 rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${status.echo_cancel ? "text-ink-300" : "text-ink-100"}`}>
+                title={t("live.switches.echoTitle")}
+                className={`flex items-center gap-2 whitespace-nowrap rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${status.echo_cancel ? "text-ink-300" : "text-ink-100"}`}>
           <span className={`relative h-4 w-7 rounded-full transition ${status.echo_cancel ? "bg-accent-500" : "bg-ink-500"}`}>
             <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${status.echo_cancel ? "left-3.5" : "left-0.5"}`} />
           </span>
-          {t("live.echoCancel")}
+          {t("live.switches.echo")}
         </button>
       )}
       {song?.mode === "sing" && <DancerToggle />}
@@ -423,15 +450,15 @@ export function SingSwitches() {
 
 /** The Dancer switch, at the bottom right under the dancer (app/page.tsx), while a learned song is sung. */
 export function DancerToggle() {
-  const { t } = useI18n();
+  const t = useT();
   const on = useDancer();
   return (
-    <button onClick={() => setDancer(!on)} title="A stick figure dancing to the song while you sing"
-            className={`flex items-center gap-2 rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${on ? "text-ink-300" : "text-ink-100"}`}>
+    <button onClick={() => setDancer(!on)} title={t("live.switches.dancerTitle")}
+            className={`flex items-center gap-2 whitespace-nowrap rounded-full px-2.5 py-1 text-xs transition hover:bg-white/6 ${on ? "text-ink-300" : "text-ink-100"}`}>
       <span className={`relative h-4 w-7 rounded-full transition ${on ? "bg-accent-500" : "bg-ink-500"}`}>
         <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${on ? "left-3.5" : "left-0.5"}`} />
       </span>
-      {t("live.dancer")}
+      {t("live.switches.dancer")}
     </button>
   );
 }
@@ -447,30 +474,119 @@ export function SongClock() {
 /** After the last lyric line: finish the play now and see the score (people often move on before the song's
  *  end, and a play only counts once it's finished). */
 export function FinishSong() {
-  const { t: translate } = useI18n();
+  const t = useT();
   useTick(500);
   const song = live.song;
+  if (pausedEndsIn() != null) return null;     // (paused: PausedFinish says it instead)
   const lines = (song?.lyrics ?? []).filter(([, text]) => text.trim());
   // learned songs only: on a first play, finishing early would also stop the rest of the song being learned
   if (!song || song.mode !== "sing" || !song.cache || lines.length < 3) return null;
-  const t = live.songTime(live.frozenPerf ?? performance.now());
+  const time = live.songTime(live.frozenPerf ?? performance.now());
   const last = lines[lines.length - 1][0];
   const barsAhead = live.bars().some(([s]) => s > live.now(live.frozenPerf ?? performance.now()));
-  if (t < last + 8 || barsAhead) return null;
+  if (time < last + 8 || barsAhead) return null;
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
       <button onClick={() => finishTake()}
               className="pointer-events-auto glass flex animate-rise items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-ink-100 shadow-lg shadow-black/40 transition hover:border-accent-400/40 hover:text-white">
-        {translate("live.finishLast")}
+        {t("live.finish.lastLine")}
         <span className="text-ink-500">·</span>
-        <span className="text-accent-300">{translate("live.finishScore")}</span>
+        <span className="text-accent-300">{t("live.finish.seeScore")}</span>
+      </button>
+    </div>
+  );
+}
+
+/** Seconds until a paused take ends and is scored (the engine's PAUSE_ENDS_S), while paused with one open. */
+function pausedEndsIn(): number | null {
+  const at = live.status.pause_ends_ms;
+  if (!at || !live.song || live.ended || live.status.player?.state !== "paused") return null;
+  return Math.max(0, (at - Date.now()) / 1000);
+}
+
+/** The take still open (History): it's listed once it's scored, so until then it shows here, singing or paused
+ *  (with the countdown to its score and Finish now). */
+export function OpenTake() {
+  const t = useT();
+  const { song, ended } = useSession();
+  const [, set] = useState(0);
+  const left = pausedEndsIn();
+  const counting = left != null;
+  useEffect(() => {
+    if (!counting) return;
+    const id = setInterval(() => set(x => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [counting]);
+  if (!song || ended || (song.mode !== "sing" && song.mode !== "learn")) return null;
+  const learning = song.mode !== "sing";
+  const paused = live.status.player?.state === "paused";
+  const what = learning ? "yes" : "no";
+  const status = paused && left != null
+    ? (left > 0.5 ? t("live.openTake.countdown", { learning: what, time: clock(Math.ceil(left)) }) : learning ? t("live.openTake.learning") : t("live.openTake.scoring"))
+    : t("live.openTake.state", { state: paused ? "paused" : learning ? "learning" : "singing", learning: what });
+  // (shaped like History's song cards, first among them: the play under way, listed once it's scored)
+  return (
+    <div className="glass rounded-3xl border-accent-400/30 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Cover name={song.track.name} art={song.track.art} link={song.track.link} size={44} />
+          <div className="min-w-0">
+            <div className="truncate font-medium">{song.track.name}</div>
+            <div className="truncate text-sm text-ink-400">{song.track.artist}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 pt-1 text-[10px] uppercase tracking-wider text-ink-400">
+          <span className="relative flex h-2 w-2">
+            {!paused && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-60 motion-reduce:animate-none" />}
+            <span className={`relative inline-flex h-2 w-2 rounded-full ${paused ? "bg-ink-400" : "bg-accent-400"}`} />
+          </span>
+          {paused ? t("live.openTake.paused") : t("live.openTake.now")}
+        </div>
+      </div>
+      <div className="mt-3 flex min-h-9 items-end justify-between gap-3">
+        <span className="tabular text-xs text-ink-300">{status}</span>
+        {(!learning || paused) && (
+          <button onClick={() => finishTake()}
+                  className="shrink-0 rounded-full bg-white/6 px-3 py-1.5 text-xs font-medium text-accent-300 outline-none transition hover:bg-accent-500 hover:text-white focus-visible:ring-2 focus-visible:ring-accent-400/60">
+            {t("live.openTake.finish")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Paused mid-song: the take waits a minute in case you carry on, then is scored. Says so, with Finish to score
+ *  it now. */
+export function PausedFinish() {
+  const t = useT();
+  useSession();      // (re-rendered when the status says it's paused, and ticking each second while it counts down:
+  const [, set] = useState(0);     // useTick stops while paused)
+  const left = pausedEndsIn();
+  const counting = left != null;
+  useEffect(() => {
+    if (!counting) return;
+    const id = setInterval(() => set(x => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [counting]);
+  if (left == null) return null;
+  const learning = live.song?.mode !== "sing";
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
+      <button onClick={() => finishTake()}
+              className="pointer-events-auto glass flex animate-rise items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-ink-100 shadow-lg shadow-black/40 transition hover:border-accent-400/40 hover:text-white">
+        {t("live.finish.paused")}
+        <span className="text-ink-500">·</span>
+        <span className="tabular text-ink-300">{left > 0.5 ? t("live.finish.pausedIn", { learning: learning ? "yes" : "no", time: clock(Math.ceil(left)) }) : learning ? t("live.finish.learning") : t("live.finish.scoring")}</span>
+        <span className="text-ink-500">·</span>
+        <span className="text-accent-300">{t("live.finish.now")}</span>
       </button>
     </div>
   );
 }
 
 export function SkipToSinging() {
-  const { t } = useI18n();
+  const t = useT();
   useTick(250);
   const lull = live.lull(live.frozenPerf ?? performance.now());
   if (!lull || lull.wait < 6) return null;
@@ -478,9 +594,9 @@ export function SkipToSinging() {
     <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
       <button onClick={() => skipToSinging()}
               className="pointer-events-auto glass flex animate-rise items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-ink-100 shadow-lg shadow-black/40 transition hover:border-accent-400/40 hover:text-white">
-        {t("live.singingIn")} {Math.ceil(lull.wait)}s
+        {t("live.skip.singingIn", { secs: Math.ceil(lull.wait) })}
         <span className="text-ink-500">·</span>
-        <span className="text-accent-300">{t("live.skipAhead")}</span>
+        <span className="text-accent-300">{t("live.skip.skipAhead")}</span>
         <Icon d={ICONS.next} size={14} />
       </button>
     </div>
@@ -490,6 +606,7 @@ export function SkipToSinging() {
 /** How close you are to the current note, in a small space: a dot on a ±1 semitone scale, green when within
  *  50 cents. Only on learned songs with the notes shown. */
 export function PitchStrip() {
+  const t = useT();
   useTick(50);
   const perf = live.frozenPerf ?? performance.now();
   // your pitch arrives a few hundred ms after you sing it (pitch tracking needs the sound first): judge the newest
@@ -515,7 +632,7 @@ export function PitchStrip() {
   // a small grey dot that fades in as you near the note: nearly invisible when far out, clear when in tune
   const alpha = Number.isNaN(err) ? 0 : Math.max(0, 1 - Math.abs(err) / 200) ** 1.5;
   return (
-    <div className="relative h-2 w-full rounded-full bg-white/6" title="Your pitch against the current note">
+    <div className="relative h-2 w-full rounded-full bg-white/6" title={t("live.pitchTitle")}>
       <div className="absolute inset-y-0 left-1/2 w-px bg-white/25" />
       {pos != null && <div className="absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-200"
                            style={{ left: `${50 + pos * 50}%`, opacity: alpha, transition: "left 60ms linear, opacity 120ms linear" }} />}
@@ -526,25 +643,30 @@ export function PitchStrip() {
 /** When a take has been scored (or a song learned): a small notice that fades after a few seconds. The takes
  *  themselves live in History. */
 export function TakeToast() {
-  const { t } = useI18n();
+  const t = useT();
   const { takes } = useSession();
   const seen = useRef<number | null>(null);
   const [shown, setShown] = useState<Take | null>(null);
   useEffect(() => {
-    const finished = takes.filter(t => t.status === "done" || t.status === "learned");
+    const finished = takes.filter(tk => tk.status === "done" || tk.status === "learned");
     if (seen.current === null) { seen.current = finished.length; return; }   // not the ones from before
     if (finished.length > seen.current) {
       seen.current = finished.length;
       setShown(finished[finished.length - 1]);
-      const id = setTimeout(() => setShown(null), 7000);
-      return () => clearTimeout(id);
     }
   }, [takes]);
+  // (its own timer, kept by what's shown: another takes update within the 7 s used to clear it, never set again,
+  // so the notice stayed up for good)
+  useEffect(() => {
+    if (!shown) return;
+    const id = setTimeout(() => setShown(null), 7000);
+    return () => clearTimeout(id);
+  }, [shown]);
   if (!shown) return null;
   const body = shown.status === "done"
     ? <><span className="tabular text-lg font-bold text-white">{shown.score}</span>
-        {shown.report && <Link href={`/take?id=${encodeURIComponent(shown.report)}`} className="text-accent-300 hover:text-white">{t("live.view")}</Link>}</>
-    : <span className="text-good">{t("live.learnedReady")}</span>;
+        {shown.report && <Link href={`/take?id=${encodeURIComponent(shown.report)}`} className="shrink-0 whitespace-nowrap text-accent-300 hover:text-white">{t("live.toast.view")}</Link>}</>
+    : <span className="text-good">{t("live.toast.learned")}</span>;
   return (
     <div className="glass flex min-w-0 animate-rise items-center gap-3 rounded-2xl px-4 py-2 text-sm shadow-lg shadow-black/30">
       <span className="min-w-0 truncate text-ink-200">{shown.name}</span>

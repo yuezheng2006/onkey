@@ -1,34 +1,54 @@
 pub mod analysis;
 pub mod bleed;
 pub mod capture;
+pub mod challenge;
 pub mod ctc;
+pub mod links;
 pub mod beats;
 pub mod dsp;
 pub mod game;
+pub mod gpu;
+pub mod demo;
 pub mod devtest;
+#[cfg(any(windows, target_os = "linux", test))]
+pub mod digest;
 pub mod discard;
+#[cfg(any(feature = "devtest", test))]
+pub mod ear;
 #[cfg(feature = "devtest")]
 pub mod mirror;
 pub mod engine;
+pub mod feedback;
 pub mod learn;
 pub mod listen;
 pub mod lowmem;
+pub mod landmark;
+#[cfg(all(test, target_os = "macos"))]
+mod landmark_bench;
+pub mod lang;
 pub mod lyrics;
+pub mod messages;
 pub mod models;
 pub mod lyrics_align;
+pub mod miccopy;
 pub mod mdx;
 pub mod music;
 pub mod notmusic;
 pub mod notes;
 pub mod permissions;
+pub mod platform;
 pub mod pitch;
 pub mod progress;
+pub mod range;
 pub mod recognize;
 pub mod records;
 pub mod report;
 pub mod resample;
 pub mod settings;
 pub mod share;
+// (drawn in Swift on macOS: checked there against it)
+#[cfg(any(windows, test))]
+pub mod share_draw;
 pub mod source;
 pub mod spotify;
 pub mod store;
@@ -38,20 +58,28 @@ pub mod takeaudio;
 pub mod timing;
 pub mod updater;
 pub mod tracker;
+pub mod trackids;
 pub mod viz;
+pub mod voice;
 pub mod youtube;
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{Manager, State};
 
 type Shared = Arc<Mutex<engine::Shared>>;
 
 /// The app whose music OnKey follows: in listening mode, the one playing sound (whatever a song's id says).
 fn following() -> source::Source {
+    // the demo song, while it plays: OnKey's own player, in every mode
+    if demo::on() {
+        return source::Source::Demo;
+    }
     if settings::listening() {
-        listen::want_bundle().map_or(source::Source::Other, listen::source_of)
+        // nothing heard yet (a first launch, before any music): the app OnKey follows otherwise, if it's open
+        listen::want_bundle().map_or_else(|| Some(source::active()).filter(|a| source::app_running(a.bundle())).unwrap_or(source::Source::Other),
+                                          listen::source_of)
     } else {
         source::active()
     }
@@ -60,7 +88,8 @@ fn following() -> source::Source {
 /// In listening mode, a control needs your permission for that app: the answer the window shows instead of
 /// doing it (which app, the setting that allows it, and the song, which can be opened there without control).
 fn needs_control(app: source::Source, track: Option<&str>) -> Option<Value> {
-    if source::controllable(app) {
+    // (nothing heard and no music app open: nothing to control, and no app to ask about; the key does nothing)
+    if source::controllable(app) || (app == source::Source::Other && listen::want_bundle().is_none()) {
         return None;
     }
     let (key, name) = source::control_key(app).unwrap_or(("", listen::want_bundle().map_or("your music app", listen::app_name)));
@@ -83,30 +112,40 @@ fn running_app() -> Option<source::Source> {
     listen::want_bundle().map(listen::source_of).filter(|s| *s != source::Source::Other)
 }
 
-/// Start a track in the app it belongs to (Spotify, Apple Music for songs in your library, or YouTube). A song kept
-/// by its ISRC is played by its id in the app it opens in (see `store::pick_app`), when that's known.
+/// Start a song (the Library's Play, Sing it again): in the app its "in Apple Music ↗" link names, by its id there
+/// (see `store::play_plan`). The answer: `ok` with the app's name and the id it was played by there; `needs` (listening mode, control not allowed:
+/// the window asks); or `cant` with the app's name and why (`no_id`: OnKey knows no id for it there, `failed`:
+/// the app didn't play it), and the window says so with a button to open it there.
 #[tauri::command(async)]
 fn play_track(id: String, window: tauri::WebviewWindow, store: State<store::Store>) -> Value {
-    let mut id = id;
-    let mut named = None;
-    if source::Source::of_id(&id) == source::Source::Other {
-        let (pick, _) = store.open_pick(&id, running_app());
-        match pick.id {
-            Some(own) => id = own,
-            None => named = Some(pick.app),
+    let open = |s: source::Source| match s {
+        source::Source::Spotify => spotify::running(),
+        source::Source::Music => music::running(),
+        _ => false,
+    };
+    let (app, play) = match store.play_plan(&id, running_app(), open) {
+        store::PlayPlan::Start { app, id } => (app, id),
+        store::PlayPlan::NoId { app } => {
+            engine::log(&format!("can't start {id}: no id for it in {}", app.name()));
+            return serde_json::json!({"cant": {"app": app.name(), "why": "no_id", "track": id}});
         }
-    }
-    let app = source::Source::of_id(&id);
-    if let Some(mut n) = needs_control(app, Some(&id)) {
-        // no id to play it by: open it in the app it opens in (named in the prompt)
-        if let Some(a) = named {
-            n["needs"]["app"] = serde_json::json!(a.name());
-        }
+    };
+    if let Some(n) = needs_control(app, Some(&id)) {
         return n;
     }
-    source::play_track(&id);
+    platform::spotify::opening(&play, || store.open_pick(&id, None).1);
+    let was_open = open(app);
+    let t = std::time::Instant::now();
+    let played = source::play_track(&play);
+    // one line per start, so a song that "starts twice" shows whether OnKey asked twice or the app restarted it
+    engine::log(&format!("asked {} to play {id} ({}, {} ms){}", app.name(),
+        if was_open { "was open" } else { "wasn't open" }, t.elapsed().as_millis(), if played { "" } else { ": failed" }));
+    if !played {
+        return serde_json::json!({"cant": {"app": app.name(), "why": "failed", "track": id}});
+    }
     keep_in_front(window, app);
-    serde_json::json!({"ok": true})
+    // (`id`: the id it's played by there, which the song shows by while it plays)
+    serde_json::json!({"ok": true, "app": app.name(), "id": play})
 }
 
 /// Open a song in your music app without controlling it (listening mode, control not allowed; the Library's and
@@ -114,11 +153,18 @@ fn play_track(id: String, window: tauri::WebviewWindow, store: State<store::Stor
 /// You press play there; OnKey hears it.
 #[tauri::command]
 fn open_in_app(id: String, store: State<store::Store>) {
+    // the demo song has no app of its own: OnKey plays it
+    if demo::is_demo(&id) {
+        source::play_track(&id);
+        return;
+    }
     let (pick, track) = store.open_pick(&id, running_app());
     if pick.app == source::Source::YouTube {
         listen::youtube_used();         // you'll play it in your browser: its sound is listened to for a while
     }
-    let _ = std::process::Command::new("open").arg(open_url(&pick, track.as_ref(), music::region().as_deref())).status();
+    let url = open_url(&pick, track.as_ref(), platform::sys::region().as_deref());
+    platform::spotify::opening(&url, || track.clone());
+    platform::shell::open_song_link(&url);
 }
 
 /// The app a song opens in ("Spotify", "Apple Music", "YouTube"), for its "in Spotify ↗" link.
@@ -128,20 +174,33 @@ fn open_app(id: String, store: State<store::Store>) -> &'static str {
 }
 
 /// What `open` is given for a pick: Spotify's track (spotify:track:…) or a search there, the YouTube video or a
-/// search, the song's Apple Music page or a search there.
+/// search, the song's Apple Music page or a search there. An id OnKey made up (Windows, trackids.rs) is searched for.
 fn open_url(pick: &store::Pick, track: Option<&source::Track>, region: Option<&str>) -> String {
     let q = urlencoding::encode(&track.map(|t| format!("{} {}", t.artist, t.name)).unwrap_or_default()).into_owned();
-    match (pick.app, &pick.id) {
-        (source::Source::Spotify, Some(id)) => id.clone(),
-        (source::Source::YouTube, Some(id)) => format!("https://www.youtube.com/watch?v={}", id.strip_prefix(youtube::ID_PREFIX).unwrap_or("")),
-        (source::Source::YouTube, None) => format!("https://www.youtube.com/results?search_query={q}"),
+    // (ids checked as play_track checks them: `open` is never handed anything else, an option or another kind of
+    // address; nor an id OnKey made up)
+    let spotify = |id: &&String| id.starts_with("spotify:track:") && !trackids::is_media_id(id)
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == ':');
+    let video = |id: &&String| !trackids::is_media_id(id) && id.strip_prefix(youtube::ID_PREFIX)
+        .is_some_and(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    match (pick.app, pick.id.as_ref()) {
+        (source::Source::Spotify, Some(id)) if spotify(&id) => id.clone(),
+        (source::Source::YouTube, Some(id)) if video(&id) => format!("https://www.youtube.com/watch?v={}", id.strip_prefix(youtube::ID_PREFIX).unwrap_or("")),
+        (source::Source::YouTube, _) => format!("https://www.youtube.com/results?search_query={q}"),
         (source::Source::Music, _) => match track.and_then(|t| t.link.as_deref()).and_then(music::apple_music_link) {
             Some(page) => music::apple_music_opens(&page, region)[0].clone(),
             None if q.is_empty() => "music://".to_string(),
             None => format!("music://music.apple.com/search?term={q}"),
         },
-        (source::Source::Spotify | source::Source::Other, _) => format!("spotify:search:{q}"),
+        (source::Source::Spotify | source::Source::Other | source::Source::Demo, _) => format!("spotify:search:{q}"),
     }
+}
+
+/// The demo song bundled with this build ("Try it now": {id, name, artist, duration, credit, licence}), or null
+/// when there's none (the window then doesn't offer it).
+#[tauri::command]
+fn demo_info() -> Value {
+    demo::info()
 }
 
 /// Let OnKey control an app from now on (listening mode): "control_spotify", "control_music" or "youtube".
@@ -162,14 +221,7 @@ fn keep_in_front(window: tauri::WebviewWindow, app: source::Source) {
         // checked every 15 ms for the first 2 s (so it's hidden before it has fully appeared), then every 100 ms
         for i in 0..150 {
             std::thread::sleep(std::time::Duration::from_millis(if i < 133 { 15 } else { 100 }));
-            let w = window.clone();
-            let _ = window.run_on_main_thread(move || {
-                let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication();
-                if let Some(a) = front.filter(|a| a.bundleIdentifier().is_some_and(|b| b.to_string() == bundle)) {
-                    a.hide();
-                    let _ = w.set_focus();
-                }
-            });
+            platform::app::hide_if_front(&window, bundle);
         }
     });
 }
@@ -198,6 +250,11 @@ struct Along {
     seen: String,
 }
 
+/// Is `playing` (the app's id for its current song) the song being listened back to (`track`, as `along_of` took it)?
+fn is_along_song(playing: &str, track: &str, along: &Along) -> bool {
+    playing == track || playing == along.seen || along.play.as_deref() == Some(playing)
+}
+
 fn along_ids(id: &str, pick: &store::Pick, kept: Option<&str>, listening: bool) -> Along {
     let own = source::Source::of_id(id);
     let (app, play) = if own == source::Source::Other { (pick.app, pick.id.clone()) } else { (own, Some(id.to_string())) };
@@ -210,8 +267,23 @@ fn along_of(id: &str, store: &store::Store) -> Along {
     along_ids(id, &pick, song.as_ref().map(|t| t.id.as_str()), settings::listening())
 }
 
+/// Listening back to a take of the song the engine knows as `seen`: no new take while it plays. `told`: the app
+/// has been told where to play already (else `told_app` says when it has): the song's place is found afresh from then.
+fn listen_back(shared: &Shared, seen: String, told: bool) {
+    let mut sh = shared.lock().unwrap();
+    sh.play_along = Some(seen);
+    sh.along_stopping = false;
+    sh.along_from = told.then(std::time::Instant::now);
+    sh.along_place = None;
+    // heard once the music app plays it: until then the song that was playing (the app takes a moment to switch)
+    // mustn't end the listening back (live: it did, and the requested song became a new take)
+    sh.along_heard = false;
+}
+
 /// Listen back to a take with the song: play the track in its app from this position (s) without recording a
 /// new take while it plays. `track`: the take's id or the app's own id for it (`along_mode`'s play_id).
+/// OnKey only tells the app what to do: where your recording plays is where the engine places the song, as it
+/// places a take (`player_now`, engine::Along), from what the app says once it has been told.
 #[tauri::command(async)]
 fn play_along(track: String, position: f64, shared: State<Shared>, store: State<store::Store>, window: tauri::WebviewWindow) -> Value {
     let along = along_of(&track, &store);
@@ -220,25 +292,39 @@ fn play_along(track: String, position: f64, shared: State<Shared>, store: State<
     }
     // no id in its app to play it by (along_mode said so: the window joins in instead)
     let Some(play) = along.play else { return serde_json::json!({"ok": false}) };
-    {
-        let mut sh = shared.lock().unwrap();
-        sh.play_along = Some(along.seen);
-        // heard once the music app plays it: until then the song that was playing (the app takes a moment to
-        // switch) mustn't end the listening back (live: it did, and the requested song became a new take)
-        sh.along_heard = false;
-    }
+    listen_back(&shared, along.seen, false);
+    let shared = shared.inner().clone();
+    let store = store.inner().clone();
     std::thread::spawn(move || {
         let app = along.app;
         // (the app itself says its own id, not the one the song is kept under)
+        // the song is started once: the old pause, seek and play again after starting it made Spotify start it two
+        // or three times. The song's place is found afresh once the app has been told (told_app)
         let now = app.state();
         if now.as_ref().map_or(true, |s| s.track.id != play) {
-            source::play_track(&play);
+            engine::log(&format!("play with the song: starting {play} in {}, then to {position:.1} s", app.name()));
+            platform::spotify::opening(&play, || store.open_pick(&track, None).1);
+            let played = source::play_track(&play);
             keep_in_front(window, app);
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        } else if now.as_ref().is_some_and(|s| !s.playing) {
-            app.control("playpause");
+            // (until the app plays it: a seek before then would move the song before)
+            let t = std::time::Instant::now();
+            while played && app.state().map_or(true, |s| s.track.id != play) && t.elapsed() < std::time::Duration::from_secs(3) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            // from the start: it's there already, no seek (a seek right after starting can make it start again);
+            // not played: no seek either (it would move whatever the app has instead)
+            if played && position > 1.0 {
+                app.seek(position);
+            }
+        } else {
+            let playing = now.is_some_and(|s| s.playing);
+            engine::log(&format!("play with the song: {play} already in {}, to {position:.1} s{}", app.name(), if playing { "" } else { " and play" }));
+            app.seek(position);
+            if !playing {
+                app.control("play");
+            }
         }
-        app.seek(position);
+        told_app(&shared);
     });
     serde_json::json!({"ok": true})
 }
@@ -250,37 +336,54 @@ fn play_along(track: String, position: f64, shared: State<Shared>, store: State<
 #[tauri::command(async)]
 fn along_mode(track: String, store: State<store::Store>) -> Value {
     let along = along_of(&track, &store);
-    let name = match along.app {
-        source::Source::Other => listen::want_bundle().map_or("your music app", listen::app_name),
-        source::Source::YouTube => "your browser",
-        a => a.name(),
+    // the app by name when it has one; else what it is (`app_kind`: music_app, browser), said by the window
+    let (name, kind) = match along.app {
+        source::Source::Other => (listen::want_bundle().and_then(listen::app_name_known), "music_app"),
+        source::Source::YouTube => (None, "browser"),
+        a => (Some(a.name()), "app"),
     };
     // without the song's id in its app, OnKey can't ask the app to play it: allowing control wouldn't help
     let key = along.play.as_ref().and(source::control_key(along.app)).map(|k| k.0);
-    serde_json::json!({"control": source::controllable(along.app) && along.play.is_some(), "app": name, "key": key, "play_id": along.play})
+    serde_json::json!({"control": source::controllable(along.app) && along.play.is_some(), "app": name, "app_kind": kind, "key": key, "play_id": along.play})
 }
 
 /// Listening back by joining in (listening mode, no control): no new take while this track plays, and the
-/// recording follows the song wherever you play it in its app.
+/// recording follows the song wherever you play it in its app, placed as a take places it (the same rule as
+/// `play_along`, which only also tells the app to play).
 #[tauri::command]
 fn join_along(track: String, shared: State<Shared>, store: State<store::Store>) {
     let along = along_of(&track, &store);
     if along.app == source::Source::YouTube {
         listen::youtube_used();
     }
-    let mut sh = shared.lock().unwrap();
-    sh.play_along = Some(along.seen);
-    sh.along_heard = false;
+    listen_back(&shared, along.seen, true);
 }
 
-/// Stop listening back (the music pauses; plays after this are takes again).
+/// Listening back: the app has been told where to play (play_along's thread), so the song's place is found from
+/// what it says from now (engine::Along). Only for the listening back still under way.
+fn told_app(shared: &Shared) {
+    let mut sh = shared.lock().unwrap();
+    if sh.play_along.is_some() && sh.along_from.is_none() {
+        sh.along_from = Some(std::time::Instant::now());
+    }
+}
+
+/// Stop listening back (the music pauses; plays after this are takes again). Listening back ends once the music
+/// is paused or moves on (engine::along_follows): the song playing on meanwhile isn't a new take.
 #[tauri::command(async)]
 fn stop_play_along(shared: State<Shared>, store: State<store::Store>) {
-    let was = shared.lock().unwrap().play_along.take();
+    let was = {
+        let mut sh = shared.lock().unwrap();
+        sh.along_stopping = sh.play_along.is_some();
+        sh.play_along.clone()
+    };
     if let Some(track) = was {
         // (it may be the id the song is kept under: its app is the one it was played in)
-        let app = along_of(&track, &store).app;
-        if source::controllable(app) && app.state().is_some_and(|s| s.playing) {
+        let along = along_of(&track, &store);
+        let app = along.app;
+        // only while that song is still the one playing: leaving the take's page for another song's Sing would
+        // otherwise pause the new song a moment after it started (live, 29 Oct: Spotify's answer took seconds)
+        if source::controllable(app) && app.state().is_some_and(|s| s.playing && is_along_song(&s.track.id, &track, &along)) {
             app.control("playpause");
         }
     }
@@ -297,30 +400,134 @@ fn take_playing(on: bool) {
 /// (ONKEY_DEV_TOOLS=1); a release never has them.
 #[tauri::command]
 fn dev_tools() -> bool {
+    dev_on()
+}
+
+/// Whether this is a development build started with the development tools (`dev_tools`).
+pub(crate) fn dev_on() -> bool {
     cfg!(feature = "devtest") && std::env::var("ONKEY_DEV_TOOLS").is_ok_and(|v| v == "1")
+}
+
+/// Development tools of OnKey's private development checkout (its dev/ folder, which isn't published): `name` and
+/// its `args`, answered by devtest::dev_hook. Null in every build of the published source, and outside a development
+/// build started by `./run`.
+#[tauri::command(async)]
+fn dev_hook(name: String, args: Value) -> Value {
+    if !dev_on() {
+        return Value::Null;
+    }
+    devtest::dev_hook(&name, &args)
+}
+
+/// Development tools: the ear (ear.rs) listens to "Play with the song" while it plays this take (`on`), measuring
+/// the gap you hear between the song and your voice from what the music app and the window actually output, and
+/// says it in the log every 2 s; off, its summary. Nothing outside a development build started by `./run`.
+#[tauri::command(async)]
+#[allow(unused_variables)]
+fn dev_ear(take: String, on: bool, shared: State<Shared>, store: State<store::Store>) {
+    #[cfg(feature = "devtest")]
+    {
+        if !dev_on() {
+            return;
+        }
+        if !on {
+            return ear::stop();
+        }
+        let Some(r) = store.take_result(&take) else { return engine::log(&format!("ear: no take {take}")) };
+        let Some(dir) = store.take_dir(&take) else { return };
+        let Some(mic) = takeaudio::recording(&dir) else { return engine::log(&format!("ear: take {take} has no recording kept")) };
+        let Ok(track) = serde_json::from_value::<source::Track>(r["track"].clone()) else { return };
+        let song = store.song_key(&track);
+        let along = along_of(&track.id, &store);
+        let app_name = match along.app {
+            source::Source::Spotify => "Spotify",
+            source::Source::Music => "Music",
+            source::Source::YouTube => "YouTube",
+            source::Source::Demo => "demo",
+            source::Source::Other => "app",
+        };
+        let mut ids = vec![track.id.clone(), song.clone(), along.seen.clone()];
+        ids.extend(along.play.clone());
+        ear::start(ear::Take {
+            id: take,
+            track_id: track.id.clone(),
+            ids,
+            frame: ear::Frame { song_offset: r["song_offset"].as_f64().unwrap_or(0.0), latency: r["latency_ms"].as_f64().unwrap_or(0.0) / 1000.0 },
+            mic,
+            onsets: store.load_song(&song).map(|l| l.onset).unwrap_or_default(),
+            bundle: along.app.bundle().to_string(),
+            app_name: app_name.to_string(),
+            shared: shared.inner().clone(),
+        });
+    }
 }
 
 /// Development tools: put `text` on the clipboard (a take's link, say).
 #[tauri::command]
 fn dev_copy(text: String) -> bool {
-    dev_tools() && copy_to_clipboard(&text)
+    dev_tools() && platform::shell::copy(&text)
 }
 
-/// `text` on the clipboard.
-fn copy_to_clipboard(text: &str) -> bool {
-    use std::io::Write;
-    let Ok(mut c) = std::process::Command::new("/usr/bin/pbcopy").stdin(std::process::Stdio::piped()).spawn() else { return false };
-    let ok = c.stdin.take().is_some_and(|mut i| i.write_all(text.as_bytes()).is_ok());
-    ok && c.wait().is_ok_and(|s| s.success())
+/// "Challenge a friend": a challenge link (ui/lib/challenge.ts) on the clipboard. Only a singonkey.app/c/ link, and
+/// a short one, so this can't be used to put anything else there. Whether it was copied.
+#[tauri::command]
+fn copy_challenge(link: String) -> bool {
+    challenge_link_ok(&link) && platform::shell::copy(&link)
 }
 
-/// Where the music app is right now: track, playing, position (s, estimated to this moment).
+/// A challenge link's signature for the score it says (challenge.rs), or "" from a build without the signing key
+/// (the site then shows the score as not checked). The parts as the link holds them (ui/lib/challenge.ts).
+#[tauri::command]
+fn sign_challenge(song: String, by: String, score: u32, name: String) -> String {
+    challenge::sign(&song, &by, score, &name).unwrap_or_default()
+}
+
+fn challenge_link_ok(link: &str) -> bool {
+    link.starts_with("https://singonkey.app/c/") && link.len() <= 1000 && !link.chars().any(char::is_control)
+}
+
+/// Where the music app is right now: track, playing, position (s, estimated to this moment). And, listening back,
+/// where the song is (`heard`, s, null while it isn't playing or placed yet): placed as a take places it (engine::Along:
+/// from the app's position or listening's clock, then the music's own fingerprint), running on between audio
+/// deliveries (up to a quarter second). "Play with the song" plays your recording there, as a take's bars are shown
+/// there.
 #[tauri::command]
 fn player_now(shared: State<Shared>) -> Option<serde_json::Value> {
     let (id, playing, pos, at) = shared.lock().unwrap().player_now.clone()?;
     let p = if playing { pos + at.elapsed().as_secs_f64() } else { pos };
-    Some(serde_json::json!({"track": id, "playing": playing, "position": p}))
+    // the demo song: OnKey's own player plays the very audio the song was learned from, so its position is the
+    // song's (no other clock to be off), and listening steps aside while it plays (demo.rs): it's what's heard
+    // (`feed`: listening's timing, for the log only: [age of its last feed, that block's length, how far the audio
+    // fed has fallen behind the wall clock], s; see listen::timing)
+    let r3 = |x: f64| (x * 1000.0).round() / 1000.0;
+    let feed = listen::timing().map(|(age, block, behind)| [r3(age), r3(block), r3(behind)]);
+    // (`voice`: where your recording is, read with the song's place, so the two are compared at one moment)
+    let voice = voice::position();
+    if crate::demo::is_demo(&id) {
+        return Some(serde_json::json!({"track": id, "playing": playing, "position": p, "heard": playing.then_some(p), "demo": true, "feed": feed, "voice": voice}));
+    }
+    let (along, take) = { let sh = shared.lock().unwrap(); (sh.along_place, sh.take_place) };
+    let heard = along.filter(|_| playing).map(|(s, at)| s + at.elapsed().as_secs_f64().min(0.25));
+    // (`take`: the take under way's place, the same way, for development tools)
+    let take = take.filter(|_| playing).map(|(s, at)| s + at.elapsed().as_secs_f64().min(0.25));
+    Some(serde_json::json!({"track": id, "playing": playing, "position": p, "heard": heard, "take": take, "feed": feed, "voice": voice}))
 }
+
+/// "Play with the song": your recording, played natively (voice.rs), so where it is can be known exactly. Opens the
+/// take's recording: its length (s).
+#[tauri::command(async)]
+fn voice_open(id: String, store: State<store::Store>) -> Option<f64> {
+    voice::open(&takeaudio::recording(&store.take_dir(&id)?)?)
+}
+#[tauri::command(async)]
+fn voice_play(from: f64) { voice::play(from) }
+#[tauri::command(async)]
+fn voice_stop() { voice::stop() }
+#[tauri::command(async)]
+fn voice_close() { voice::close() }
+/// Louder or quieter (dB): the listening level the window works out, plus "Your voice".
+#[tauri::command(async)]
+fn voice_gain(db: f64) { voice::gain(db) }
 
 /// What's happening now, for a window that has just loaded (engine::catch_up).
 #[tauri::command]
@@ -343,27 +550,91 @@ fn set_youtube(on: bool) {
 
 /// A setting saved across restarts (see settings.rs for the keys).
 #[tauri::command]
-fn set_setting(key: String, on: bool) {
-    if matches!(key.as_str(), "listening" | "control_spotify" | "control_music" | "hide_starters" | "shazam" | "show_lyrics") {
-        settings::set(&key, on);
+fn set_setting(key: String, on: bool) -> Result<(), String> {
+    if matches!(key.as_str(), "listening" | "control_spotify" | "control_music" | "hide_starters" | "shazam" | "show_lyrics" | "fade_guide") {
+        settings::try_set(&key, on)?;
     }
     if key == "battery_30fps" || key == "voice_breaks" {
-        settings::set(&key, on);
+        settings::try_set(&key, on)?;
     }
     // keep the learning models ready between songs (lowmem::keep_learning_models); off: let go of them now
     if key == "keep_models" {
-        settings::set(&key, on);
+        let saved = settings::try_set(&key, on);
         if !on {
             std::thread::spawn(|| engine::release_learning_models(true));
         }
+        saved?;
     }
+    Ok(())
+}
+
+/// "Pause listening" (the Sing page's Live chip, the header's "Resume", ⌘⇧P from the menu): kept across restarts.
+/// The engine, if napping, is woken, so it stops or starts within about half a second and the window hears so.
+#[tauri::command]
+fn set_listening_paused(on: bool) -> Result<(), String> {
+    let saved = settings::try_set("listening_paused", on);     // (held until OnKey quits even if not saved)
+    engine::wake();
+    listening_menu();
+    saved
+}
+
+/// The app menu's "Pause Listening" / "Resume Listening" (⌘⇧P), kept in step with the setting (platform/mac/app.rs
+/// puts it there, again whenever the menu is rebuilt in another language).
+#[allow(dead_code)]     // (no menu bar on Windows and Linux)
+pub(crate) static LISTENING_ITEM: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>> = Mutex::new(None);
+
+/// The words for that item now (messages/<lang>.json).
+#[allow(dead_code)]
+pub(crate) fn listening_menu_key() -> &'static str {
+    if settings::listening_paused() { "menu.app.resumeListening" } else { "menu.app.pauseListening" }
+}
+
+fn listening_menu() {
+    if let Some(item) = LISTENING_ITEM.lock().unwrap().as_ref() {
+        let _ = item.set_text(messages::t(listening_menu_key()));
+    }
+}
+
+/// How strictly takes are scored from the next one on: "relaxed" (the default), "steady" or "pro" (dsp::LEVELS).
+#[tauri::command]
+fn set_scoring_level(level: String) {
+    let l = dsp::Level::parse(Some(&level));
+    settings::set_value("scoring_level", if l == dsp::Level::Relaxed { Value::Null } else { Value::String(l.name().into()) });
+}
+
+/// The window's language: a code ("en", "zh"…) or "auto" (the computer's own language). Kept across restarts. The
+/// menu bar follows (messages.rs).
+#[tauri::command]
+fn set_language(app: tauri::AppHandle, code: String) -> Result<(), String> {
+    let saved = settings::set_language(&code);
+    platform::app::relabel(&app);
+    saved
+}
+
+/// The computer's preferred languages, most preferred first ("en-GB", "zh-Hans-CN"…; macOS's, Windows' or the
+/// locale's on Linux), for the window to choose its language from when Settings says "auto". Async: kept off the
+/// window's thread.
+#[tauri::command(async)]
+fn ui_locale() -> Vec<String> {
+    platform::sys::preferred_languages()
+}
+
+/// The computer's region (ISO country code, lower case: "mx"; macOS's Language & Region, Windows' country, the
+/// locale's on Linux), for the window's first-run language list to offer that region's language second. None when
+/// the system names none.
+#[tauri::command(async)]
+fn ui_region() -> Option<String> {
+    platform::sys::region()
 }
 
 /// The microphones connected, the one OnKey listens to now (setup's mic check and the takes alike), and the one
 /// chosen in Settings (null: automatic). Async: listing Core Audio's devices is kept off the window's thread.
 #[tauri::command(async)]
 fn mics() -> Value {
-    serde_json::json!({"devices": capture::mics(), "chosen": capture::chosen_mic(), "preferred": settings::get_str("mic")})
+    // the chosen mic as listed, so it says whether it's virtual (chosen_mic doesn't look that up)
+    let devices = capture::mics();
+    let chosen = capture::chosen_mic().map(|c| devices.iter().find(|d| d.uid == c.uid).cloned().unwrap_or(c));
+    serde_json::json!({"devices": devices, "chosen": chosen, "preferred": settings::get_str("mic")})
 }
 
 /// Listen to this microphone (a uid from `mics`), or automatically (null). The engine moves to it within 3 s.
@@ -412,9 +683,11 @@ fn settings_now() -> Value {
     serde_json::json!({"listening": settings::listening(), "control_spotify": settings::control("control_spotify"),
         "control_music": settings::control("control_music"), "youtube": youtube::enabled(), "listen_only": settings::listen_only(),
         "hide_starters": settings::get("hide_starters"), "shazam": settings::shazam(), "show_lyrics": settings::show_lyrics(),
+        "fade_guide": settings::fade_guide(),
         "keep_models": lowmem::keep_learning_models(), "keep_models_default": lowmem::keep_by_default(), "small_mac": lowmem::low_memory(),
         "battery_30fps": settings::get_opt("battery_30fps").unwrap_or(true),
-        "voice_breaks": settings::get_opt("voice_breaks").unwrap_or(true)})
+        "voice_breaks": settings::get_opt("voice_breaks").unwrap_or(true), "scoring_level": dsp::Level::current().name(),
+        "language": settings::language_preference()})
 }
 
 #[tauri::command]
@@ -434,24 +707,48 @@ fn skip_to(seconds: f64, shared: State<Shared>) -> Value {
 
 /// Forget a learned song (its melody, fingerprint and lyrics). Your takes of it stay in History.
 #[tauri::command]
-fn delete_take(id: String, store: State<store::Store>) -> bool {
+fn delete_take(id: String, store: State<store::Store>) -> Result<(), String> {
     store.delete_take(&id)
 }
 
 #[tauri::command]
-fn forget_song(id: String, store: State<store::Store>) {
-    store.forget(&id);
+fn forget_song(id: String, store: State<store::Store>) -> Result<(), String> {
+    let r = store.forget(&id);
+    engine::forgotten(&id);         // (a play of it still being scored doesn't make it again)
     listen::songs_changed();        // (listening mode stops recognising it)
+    r
+}
+
+/// Learn a song again on its next play (`on`), or take that back (store::learning_again). Also: whether it's
+/// asked for, and where its learned copy looks off (`relearn`, from jumps seen on two plays; null if not).
+#[tauri::command]
+fn learn_again(id: String, on: Option<bool>, store: State<store::Store>) -> Result<serde_json::Value, String> {
+    if let Some(on) = on {
+        let r = store.set_learn_again(&id, on);
+        engine::log(&format!("learn again {}: {id}{}", if on { "asked for" } else { "taken back" }, r.as_ref().err().map_or(String::new(), |e| format!(": couldn't ({e})"))));
+        r?;
+        listen::songs_changed();        // (its signature is set aside, or back)
+    }
+    let m = store.song_state(&id);
+    Ok(m)
+}
+
+/// "Look again" under "No lyrics for this song yet": ask LRCLIB about the song once more, forgetting the "none"
+/// answers kept for it (engine::look_again). "found", "none", "unreachable" or "unknown". On its own thread: LRCLIB
+/// is asked one request at a time and may be waited for.
+#[tauri::command(async)]
+fn lyrics_look_again(id: String, app: tauri::AppHandle, store: State<store::Store>) -> &'static str {
+    engine::look_again(&app, &store, &id)
 }
 
 /// Stop learning a song and delete it (a learning card's "Stop learning and delete": a video that isn't a song,
 /// say). `name` and `artist` find it when it's being kept under another id (its ISRC). See engine::stop_learning.
 #[tauri::command]
-fn stop_learning(id: String, name: Option<String>, artist: Option<String>, app: tauri::AppHandle, shared: State<Shared>, store: State<store::Store>) {
-    let canon = store.canonical(&source::Track { id: id.clone(), name: name.unwrap_or_default(), artist: artist.unwrap_or_default(), ..Default::default() }).id;
-    let ids: Vec<String> = if canon != id { vec![id, canon] } else { vec![id] };
-    engine::stop_learning(&app, &shared, &store, &ids);
+fn stop_learning(id: String, name: Option<String>, artist: Option<String>, app: tauri::AppHandle, shared: State<Shared>, store: State<store::Store>) -> Result<(), String> {
+    let ids = store.stop_learning_ids(&source::Track { id, name: name.unwrap_or_default(), artist: artist.unwrap_or_default(), ..Default::default() });
+    let r = engine::stop_learning(&app, &shared, &store, &ids);
     listen::songs_changed();
+    r
 }
 
 /// A video OnKey took for talk is a song after all: it's learned the next time it plays.
@@ -473,18 +770,52 @@ fn is_favorite(id: String, name: Option<String>, artist: Option<String>, store: 
 }
 
 #[tauri::command]
-fn takes(store: State<store::Store>) -> Vec<Value> {
-    store.takes()
+fn takes(store: State<store::Store>) -> Result<Vec<Value>, String> {
+    store.readable(false)?;
+    Ok(store.takes())
 }
 
+/// Learned songs (an error, not an empty list, if their folder or the takes' can't be read: see Store::readable).
 #[tauri::command]
-fn library(store: State<store::Store>) -> Vec<Value> {
-    store.library()
+fn library(store: State<store::Store>) -> Result<Vec<Value>, String> {
+    store.readable(true)?;
+    let mut rows = store.library();
+    range::annotate(&mut rows, &store, &store.root);
+    Ok(rows)
+}
+
+/// Your vocal range from your takes (range.rs): null until there's enough singing.
+#[tauri::command]
+fn voice_range(store: State<store::Store>) -> Value {
+    range::summary(&store.root)
 }
 
 #[tauri::command]
 fn take(id: String, store: State<store::Store>) -> Option<Value> {
-    store.take_result(&id)
+    let mut r = store.take_result(&id)?;
+    // at the level chosen in Settings, as every score shown is (store::take_summary)
+    analysis::at_level(&mut r, dsp::Level::current());
+    // the song's stretches marked "Not the melody" (song seconds), for the take page to show and put back
+    if let Ok(t) = serde_json::from_value::<source::Track>(r["track"].clone()) {
+        let song = store.song_key(&t);
+        r["song_id"] = json!(song);
+        r["not_melody"] = json!(store.not_melody(&song).iter().map(|&(a, b)| [a, b]).collect::<Vec<_>>());
+    }
+    Some(r)
+}
+
+/// The take page's "Not the melody": a learned song's stretches (song seconds) whose learned notes follow a backing
+/// vocal or a harmony, kept with the song (all of them, as they are now: none puts every one back), and every take
+/// of it scored again with them left out. Returns the stretches as kept and how many takes' scores changed; None
+/// when the song isn't learned.
+#[tauri::command]
+fn set_not_melody(id: String, stretches: Vec<(f64, f64)>, store: State<store::Store>) -> Option<Value> {
+    let kept = store.set_not_melody(&id, &stretches)?;
+    let takes = store.takes_of(&id);
+    let changed = takes.iter().filter(|t| store.rescore_take(t, &kept).is_some()).count();
+    engine::log(&format!("{id}: {} stretch{} marked not the melody; {changed} of {} take{} rescored", kept.len(),
+                         if kept.len() == 1 { "" } else { "es" }, takes.len(), if takes.len() == 1 { "" } else { "s" }));
+    Some(json!({"not_melody": kept.iter().map(|&(a, b)| [a, b]).collect::<Vec<_>>(), "rescored": changed}))
 }
 
 /// "Share this take": the clip to make, from the playhead `t` (s into the take, snapped down to a whole second of
@@ -502,19 +833,50 @@ fn share_window(id: String, t: Option<f64>, store: State<store::Store>) -> Optio
         "hits": take.hits(start), "notes": take.notes_in(start)}))
 }
 
+/// The take page's "Share this take" ask, at a proud moment (share::prompt): {"kind", "params", "reason"}, or null.
+#[tauri::command]
+fn share_prompt(id: String, store: State<store::Store>) -> Option<Value> {
+    share::prompt(&store, &id)
+}
+
+/// The ask for take `id` has been shown: it isn't shown again.
+#[tauri::command]
+fn share_prompt_seen(id: String, store: State<store::Store>) {
+    share::prompt_seen(&store, &id)
+}
+
+/// The take page's "How's OnKey working for you?" card (feedback::ask): the ask stage, or null.
+#[tauri::command]
+fn feedback_ask(id: String, store: State<store::Store>) -> Option<usize> {
+    feedback::ask(&store, &id)
+}
+
+/// The card for `stage` was shown: not again.
+#[tauri::command]
+fn feedback_asked(stage: usize, store: State<store::Store>) {
+    feedback::asked(&store, stage)
+}
+
+/// "Send feedback": sends your thumb and words (feedback.rs says exactly what goes), only when you press Send.
+#[tauri::command(async)]
+fn feedback_send(mood: Option<String>, text: String, email: String, from: String, language: String) -> Result<(), String> {
+    let body = feedback::body(mood.as_deref(), &text, &email, &from, &language)?;
+    feedback::send(&body)
+}
+
 /// Makes the share video of take `id` from song second `start` into Downloads, shows it in Finder and puts the
 /// song's start time ("0:42") on the clipboard, for Instagram's song picker. The video's path.
 #[tauri::command(async)]
 fn share_take(id: String, start: i64, store: State<store::Store>) -> Result<Value, String> {
     let r = store.take_result(&id).ok_or("this take couldn't be found")?;
     let dir = store.take_dir(&id).ok_or("this take couldn't be found")?;
-    let downloads = std::path::PathBuf::from(std::env::var("HOME").map_err(|e| e.to_string())?).join("Downloads");
+    let downloads = platform::shell::downloads();
     let t = std::time::Instant::now();
     let path = share::render(&r, &dir, start, &downloads)?;
     engine::log(&format!("share video of {} from {}: {} in {:.1} s", r["track"]["name"].as_str().unwrap_or("?"),
                          share::clock(start), path.display(), t.elapsed().as_secs_f64()));
-    let _ = std::process::Command::new("open").arg("-R").arg(&path).status();
-    copy_to_clipboard(&share::clock(start));
+    platform::shell::reveal(&path);
+    platform::shell::copy(&share::clock(start));
     Ok(serde_json::json!({"path": path.to_string_lossy(), "at": share::clock(start)}))
 }
 
@@ -530,36 +892,47 @@ fn take_audio(id: String, store: State<store::Store>) -> Option<String> {
 /// Only those, and Settings' own links (`link_allowed`).
 #[tauri::command]
 fn open_link(url: String) {
-    if link_allowed(&url) {
-        // a Spotify link opens the Spotify app, which OnKey hears (open.spotify.com opened the web player in the
-        // browser, which it doesn't); the web page only when the app isn't there
-        if let Some(app) = music::spotify_app_link(&url) {
-            if std::process::Command::new("open").arg(&app).status().is_ok_and(|s| s.success()) {
-                return;
-            }
+    if !link_allowed(&url) {
+        return;
+    }
+    // a Spotify link opens the Spotify app, which OnKey hears (open.spotify.com opened the web player in the
+    // browser, which it doesn't); an Apple Music page opens in the Music app (it opened the website), in this
+    // computer's own store (iTunes Search gives US-store pages). The web page (in that store too) only when the
+    // app doesn't open it
+    let (app, web) = match music::spotify_app_link(&url) {
+        Some(app) => (Some(app), url),
+        None if music::apple_music_link(&url).is_some() => {
+            let [app, web] = music::apple_music_opens(&url, platform::sys::region().as_deref());
+            (Some(app), web)
         }
-        // an Apple Music page opens in the Music app (it opened the website), in the Mac's own store (iTunes Search
-        // gives US-store pages); the web page, in that store too, only if the app doesn't open
-        if music::apple_music_link(&url).is_some() {
-            let [app, web] = music::apple_music_opens(&url, music::region().as_deref());
-            if std::process::Command::new("open").arg(&app).status().is_ok_and(|s| s.success()) {
-                return;
-            }
-            let _ = std::process::Command::new("open").arg(web).status();
-            return;
-        }
-        let _ = std::process::Command::new("open").arg(url).status();
+        None => (None, url),
+    };
+    if !app.is_some_and(|a| platform::shell::open_app_link(&a)) {
+        platform::shell::open(&web);
     }
 }
 
-/// Settings' own links, exactly these: the "Made by" site, OnKey's site and its Discord.
-const FIXED_LINKS: [&str; 3] = ["https://dsmurrell.com", "https://singonkey.app", "https://discord.gg/afHvqTNS6r"];
+/// Settings' own links, exactly these: the "Made by" site, OnKey's site, its guides and its Discord; and LRCLIB's
+/// site, from "No lyrics for this song yet" (where lyrics come from, and where anyone can add them).
+const FIXED_LINKS: [&str; 6] = ["https://dsmurrell.com", "https://singonkey.app", "https://singonkey.app/docs/",
+    "https://singonkey.app/changelog/", "https://discord.gg/afHvqTNS6r", "https://lrclib.net"];
 
-/// May `open_link` open this? A song's Apple Music page, a Spotify search or playlist, or one of Settings' own
-/// links; nothing with spaces or control characters.
+/// "Improve this translation" (Settings → Language, for an Early language): that language's catalog in OnKey's
+/// public repo, exactly https://github.com/dsmurrell/onkey/blob/main/ui/messages/<code>.json (ui/lib/languages.ts).
+fn is_translation_link(url: &str) -> bool {
+    url.strip_prefix("https://github.com/dsmurrell/onkey/blob/main/ui/messages/")
+        .and_then(|r| r.strip_suffix(".json"))
+        .is_some_and(|code| {
+            (2..=12).contains(&code.len()) && code.starts_with(|c: char| c.is_ascii_lowercase())
+                && code.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
+}
+
+/// May `open_link` open this? A song's Apple Music page, a Spotify search or playlist, one of Settings' own links,
+/// or a language's catalog on GitHub; nothing with spaces or control characters.
 fn link_allowed(url: &str) -> bool {
     let allowed = FIXED_LINKS.contains(&url) || music::apple_music_link(url).is_some() || music::is_spotify_search(url)
-        || music::is_spotify_playlist(url);
+        || music::is_spotify_playlist(url) || is_translation_link(url);
     allowed && !url.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
@@ -597,11 +970,13 @@ fn report_prepare(take: Option<String>, app: tauri::AppHandle) -> Result<Value, 
 /// default). Where it was saved (with ~ for the home folder), or None if cancelled.
 #[tauri::command(async)]
 fn report_save(description: String, app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let Some(to) = report::ask_where(&app) else { return Ok(None) };
+    let Some(to) = platform::app::report_destination(&app) else { return Ok(None) };
     let to = if to.extension().is_some_and(|x| x == "zip") { to } else { to.with_extension("zip") };
     report::save(&description, &to)?;
     engine::log("report: a problem report was saved");
-    let home = std::env::var("HOME").unwrap_or_default();
+    *SAVED_REPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(to.clone());
+    platform::app::report_saved(&to);
+    let home = platform::shell::home();
     let shown = to.to_string_lossy().into_owned();
     Ok(Some(if !home.is_empty() && shown.starts_with(&home) { shown.replacen(&home, "~", 1) } else { shown }))
 }
@@ -610,18 +985,37 @@ fn report_save(description: String, app: tauri::AppHandle) -> Result<Option<Stri
 #[tauri::command(async)]
 fn report_open_folder() {
     if let Some(d) = report::staged() {
-        let _ = std::process::Command::new("open").arg(d).status();
+        platform::shell::open(&d);
     }
 }
 
 /// The saved report, selected in Finder (`path` as report_save gave it).
 #[tauri::command(async)]
 fn report_show(path: String) {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let p = std::path::PathBuf::from(path.replacen('~', &home, 1));
-    if p.extension().is_some_and(|x| x == "zip") && p.exists() {
-        let _ = std::process::Command::new("open").arg("-R").arg(p).status();
+    // the report this OnKey saved, not the path the window sends (which could name any zip on the computer)
+    let _ = path;
+    let saved = SAVED_REPORT.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if let Some(p) = saved.filter(|p| p.exists()) {
+        platform::shell::reveal(&p);
     }
+}
+
+/// The last report saved (report_save), for report_show.
+static SAVED_REPORT: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+/// (Windows) ONKEY_REPORT_TO=<path.zip>: a report made as "Report a problem" makes it, saved there 30 s after launch,
+/// with no window: the CI's launch check keeps what a tester would send. Local only, like any report. (Nothing
+/// without that variable.)
+fn report_for_launch_check(data: std::path::PathBuf) {
+    let Some(to) = std::env::var_os("ONKEY_REPORT_TO").map(std::path::PathBuf::from) else { return };
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(30));
+        let made = report::prepare(&data, None, 3).and_then(|_| report::save("(made by the launch check)", &to));
+        engine::log(&match made {
+            Ok(()) => "report: made for the launch check".to_string(),
+            Err(e) => format!("report: couldn't make one for the launch check: {e}"),
+        });
+    });
 }
 
 /// A new GitHub issue for OnKey in the browser: the bug report form (.github/ISSUE_TEMPLATE/bug.yml), titled, with
@@ -633,7 +1027,7 @@ fn report_issue(take: Option<String>) {
     let version = format!("{} ({})", b["version"].as_str().unwrap_or("?"), b["sha"].as_str().unwrap_or("?"));
     let url = format!("{}?template=bug.yml&title={}&version={}", report::NEW_ISSUE_URL,
                       urlencoding::encode(title), urlencoding::encode(&version));
-    let _ = std::process::Command::new("open").arg(url).status();
+    platform::shell::open(&url);
 }
 
 /// Errors from the window, into the engine's log (so problems in the interface are visible too).
@@ -655,11 +1049,22 @@ fn ui_moving(moving: bool) {
 fn set_mini(on: bool, window: tauri::WebviewWindow) -> Result<(), String> {
     use tauri::{LogicalPosition, LogicalSize};
     let e = |r: tauri::Result<()>| r.map_err(|e| e.to_string());
+    // (Linux on Wayland: no app may place its own window or keep it above others there, so the bar stays where it is
+    // and is moved by hand; logged once rather than asked for and silently ignored)
+    #[cfg(target_os = "linux")]
+    let floats = !platform::linux::diag::wayland();
+    #[cfg(not(target_os = "linux"))]
+    let floats = true;
+    #[cfg(target_os = "linux")]
+    if on && !floats {
+        static SAID: std::sync::Once = std::sync::Once::new();
+        SAID.call_once(|| engine::log("mini mode: on Wayland the bar can't place itself or stay on top; drag it where you like"));
+    }
     if on {
         e(window.unmaximize())?;
         e(window.set_min_size(Some(LogicalSize::new(320.0, 80.0))))?;
         e(window.set_size(LogicalSize::new(540.0, 92.0)))?;
-        if let Some(m) = window.current_monitor().map_err(|e| e.to_string())? {
+        if let Some(m) = window.current_monitor().map_err(|e| e.to_string())?.filter(|_| floats) {
             let scale = m.scale_factor();
             let size = m.size().to_logical::<f64>(scale);
             let pos = m.position().to_logical::<f64>(scale);
@@ -667,8 +1072,10 @@ fn set_mini(on: bool, window: tauri::WebviewWindow) -> Result<(), String> {
         }
         window_buttons(&window, false)?;        // no window buttons over the lyrics
         e(window.set_shadow(false))?;           // the card draws its own (the window around it is transparent)
-        e(window.set_always_on_top(true))?;
-        e(window.set_visible_on_all_workspaces(true))?;
+        if floats {
+            e(window.set_always_on_top(true))?;
+            e(window.set_visible_on_all_workspaces(true))?;
+        }
     } else {
         window_buttons(&window, true)?;
         e(window.set_shadow(true))?;
@@ -684,26 +1091,13 @@ fn set_mini(on: bool, window: tauri::WebviewWindow) -> Result<(), String> {
 /// resets the window to a standard title bar, dropping the overlay style, and on this transparent window that
 /// title bar is see-through (whatever is behind the app shows above it).
 fn window_buttons(window: &tauri::WebviewWindow, visible: bool) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let ns = window.ns_window().map_err(|e| e.to_string())? as usize;
-        window.run_on_main_thread(move || {
-            use objc2_app_kit::{NSWindow, NSWindowButton};
-            let ns = unsafe { &*(ns as *const NSWindow) };
-            for b in [NSWindowButton::CloseButton, NSWindowButton::MiniaturizeButton, NSWindowButton::ZoomButton] {
-                if let Some(button) = ns.standardWindowButton(b) { button.setHidden(!visible); }
-            }
-        }).map_err(|e| e.to_string())?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    window.set_decorations(visible).map_err(|e| e.to_string())?;
-    Ok(())
+    platform::app::window_buttons(window, visible)
 }
 
 #[tauri::command(async)]
 fn open_privacy_settings() {
-    let _ = std::process::Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture").status();
+    // (system audio recording has no Settings page on Windows: loopback needs no permission)
+    platform::shell::open_settings("audio");
 }
 
 /// First-run setup: the microphone's and system audio recording's permission, and whether setup was done.
@@ -781,43 +1175,55 @@ fn update_restart(app: tauri::AppHandle, shared: State<Shared>) -> Value {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // whether the last session closed normally, read before this one's first log line (Windows: and a panic's or
+    // crash's cause into the log from now on: a window app there has no console)
+    let previous = platform::diag::starting();
     devtest::init();
-    let shared: Shared = Arc::new(Mutex::new(engine::Shared { blind: false, echo_cancel: true, skip_to: None, finish: false, play_along: None, along_heard: false, player_now: None, takes: Vec::new() }));
-    tauri::Builder::default()
+    let shared: Shared = Arc::new(Mutex::new(engine::Shared { blind: false, echo_cancel: true, skip_to: None, finish: false, play_along: None, along_heard: false, along_stopping: false, player_now: None, along_from: None, along_place: None, take_place: None, takes: Vec::new() }));
+    let builder = tauri::Builder::default()
         .manage(shared.clone())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        // the standard menus, with "Report a Problem…" in Help (the window opens it: components/ReportProblem.tsx)
-        .menu(|handle| {
-            let menu = tauri::menu::Menu::default(handle)?;
-            if let Some(help) = menu.get(tauri::menu::HELP_SUBMENU_ID).and_then(|h| h.as_submenu().cloned()) {
-                help.append(&tauri::menu::MenuItem::with_id(handle, "report", "Report a Problem…", true, None::<&str>)?)?;
-            }
-            Ok(menu)
-        })
-        .on_menu_event(|app, ev| {
-            if ev.id() == "report" {
-                use tauri::Emitter;
-                let _ = app.emit("onkey-menu", "report");
-            }
-        })
-        .invoke_handler(tauri::generate_handler![catch_up, player_control, play_track, set_blind, takes, library, take, take_audio, share_window, share_take, open_privacy_settings, ui_log, ui_moving, skip_to, set_mini, forget_song, stop_learning, learn_anyway, delete_take, set_echo_cancel, set_youtube, set_setting, settings_now, allow_control, open_in_app, along_mode, join_along, finish_take, play_along, stop_play_along, player_now, dev_tools, dev_copy, rename_track, take_playing,
+        .plugin(tauri_plugin_updater::Builder::new().build());
+    // the menu bar: the Mac's standard menus with "Report a Problem…" in Help; none on Windows (it would sit inside
+    // the window: Report a problem is in Settings)
+    platform::app::menu(builder)
+        .invoke_handler(tauri::generate_handler![catch_up, player_control, play_track, set_blind, takes, library, voice_range, take, set_not_melody, take_audio, share_window, share_take, share_prompt, share_prompt_seen, feedback_ask, feedback_asked, feedback_send, open_privacy_settings, ui_log, ui_moving, skip_to, set_mini, forget_song, learn_again, lyrics_look_again, dev_hook, stop_learning, learn_anyway, delete_take, set_echo_cancel, set_youtube, set_setting, set_listening_paused, set_scoring_level, set_language, ui_locale, ui_region, settings_now, allow_control, open_in_app, along_mode, join_along, finish_take, play_along, stop_play_along, player_now, voice_open, voice_play, voice_stop, voice_close, voice_gain, links::link_take, dev_tools, dev_ear, dev_copy, copy_challenge, sign_challenge, rename_track, take_playing, demo_info,
             setup_status, setup_request, setup_open_settings, setup_meter, setup_level, setup_done, setup_control, third_party_notices, perf_frames, report_prepare, report_save, report_open_folder, report_show, report_issue, open_link, starter_cover, set_favorite, is_favorite, open_app, mics, set_mic, output_timing, output_timing_check, output_timing_reset, output_timing_dismiss,
             update_status, update_check, update_set_auto, update_restart])
         .setup(move |app| {
+            // the release script's update rehearsal: this copy updates itself from this Mac and exits, before
+            // anything else starts (no log, no store, no engine: the data folder isn't touched)
+            if let Some(url) = updater::rehearsal_url() {
+                updater::rehearse(app.handle(), url);
+            }
             // the records first: this log session starts with the build and the Mac (records.rs)
             records::init(&app.path().app_data_dir()?);
+            // (Windows) the GPUs and the one learning runs on, the last session's end if it wasn't a quit, WebView2,
+            // the mic switches, the audio devices
+            platform::diag::started(previous);
+            report_for_launch_check(app.path().app_data_dir()?);
             // the takes' recordings saved as WAV before AAC: converted once, in the background, while idle
             takeaudio::start(app.path().app_data_dir()?);
+            // older takes measured once for your range (range.rs), also in the background while idle
+            range::start(app.path().app_data_dir()?);
             let store = store::Store::new(app.path().app_data_dir()?);
             app.manage(store.clone());
             // the settings first: YouTube's switch is one of them
             settings::init(&app.path().app_data_dir()?);
+            // The menu was made before settings were read. Apply the saved language and listening state.
+            platform::app::relabel(app.handle());
+            listening_menu();
             capture::set_mic_preference(&settings::get_str("mic").unwrap_or_default());
             youtube::set_data_dir(&app.path().app_data_dir()?);
+            platform::spotify::set_data_dir(&app.path().app_data_dir()?);
             discard::set_data_dir(&app.path().app_data_dir()?);
             lyrics::set_cache_dir(&app.path().app_data_dir()?);
             // the models compiled for Core ML, kept for good (compiled once, not again after a temp-folder clean)
             pitch::set_coreml_cache_dir(&app.path().app_data_dir()?);
+            // songs named before ids with punctuation had file names of their own: renamed to theirs, once
+            let renamed = store.rename_to_safe_names();
+            if renamed > 0 {
+                engine::log(&format!("library: {renamed} song{} renamed to a file name of its own", if renamed == 1 { "" } else { "s" }));
+            }
             // songs kept twice (learned under two ids before songs were kept under one) become one, once
             let merged = store.merge_duplicates();
             if merged > 0 {
@@ -825,8 +1231,10 @@ pub fn run() {
             }
             // a podcast episode (or an ad) learned as if it were a song, before they were told apart: to the Trash
             for t in store.learned_tracks().into_iter().filter(|t| !source::is_song(&t.id)) {
-                engine::log(&format!("library: {} ({}) isn't a song: removed (to the Trash)", t.name, t.id));
-                store.forget(&t.id);
+                match store.forget(&t.id) {
+                    Ok(()) => engine::log(&format!("library: {} ({}) isn't a song: removed (to the Trash)", t.name, t.id)),
+                    Err(e) => engine::log(&format!("library: {} ({}) isn't a song, but stays: {e}", t.name, t.id)),
+                }
             }
             // the apps' ids and the app played in, for songs learned before they were kept (once each)
             let filled = store.backfill_sources();
@@ -834,6 +1242,8 @@ pub fn run() {
                 engine::log(&format!("library: where {filled} song{} played found from History", if filled == 1 { "" } else { "s" }));
             }
             listen::init(store.clone());
+            // the demo song ("Try it now"), if this build has one: installed into the store when first played
+            demo::init(app.path().resource_dir().ok().as_deref(), store.clone(), &app.config().identifier);
             {
                 let store = store.clone();
                 std::thread::spawn(move || store.find_missing_covers());
@@ -846,7 +1256,7 @@ pub fn run() {
                 Ok(()) => Some(bundled),
                 Err(e) => {
                     engine::log(&format!("learning models: {e}"));
-                    models::set_state(serde_json::json!({"state": "missing", "error": e}));
+                    models::set_state(serde_json::json!({"state": "missing", "code": "files_bad", "error": e}));
                     None
                 }
             };
@@ -871,50 +1281,67 @@ pub fn run() {
             on_terminate();
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context())
         .expect("error while running OnKey")
         .run(|app, event| match event {
-            // quitting (from the menu, or the last window closed): OnKey looks gone at once (windows and Dock icon),
-            // and finishes learning the song playing and any still waiting in the background before it exits.
-            // Songs learn one at a time, so waiting 25 s lost a song queued behind another (Galway Girl, 19 Oct)
+            // quitting (the last window closed, or an exit asked for): out of sight at once (quit_out_of_sight)
             tauri::RunEvent::ExitRequested { api, .. } if !engine::quitting() => {
                 api.prevent_exit();
-                use tauri::Manager;
-                for w in app.webview_windows().values() {
-                    let _ = w.hide();
-                }
-                #[cfg(target_os = "macos")]
-                let _ = app.set_dock_visibility(false);
-                std::thread::spawn(|| {
-                    engine::shutdown(QUIT_LEARN_WAIT);
-                    updater::install();     // an update downloaded and not yet installed: the next launch is the new version
-                    relaunch_if_asked();
-                    std::process::exit(0);
-                });
+                quit_out_of_sight(app);
             }
             // ⌘Q again (or the last window closed) while it finishes out of sight: the quit going on exits when done.
             // (A requested exit, `code` Some, is the update's restart, which has waited with the quit itself.)
             tauri::RunEvent::ExitRequested { api, code: None, .. } => {
                 api.prevent_exit();
             }
-            // opened again while it finishes out of sight: macOS hands the open to this quitting copy, so it
-            // starts a fresh one as it exits (else nothing would appear)
-            #[cfg(target_os = "macos")]
-            tauri::RunEvent::Reopen { .. } if engine::quitting() => {
-                RELAUNCH.store(true, std::sync::atomic::Ordering::SeqCst);
-                engine::log("quitting: opened again meanwhile, so it starts afresh when done");
-            }
+            // quit some other way (the Dock's Quit, logging out): the app can't hide while it waits here, so it
+            // waits only a moment; a song still being learned is learned on its next play
             tauri::RunEvent::Exit => {
-                engine::shutdown(QUIT_WAIT);
+                engine::shutdown(QUIT_BRIEF);
                 updater::install();
             }
-            _ => {}
+            // macOS's own: opened again while quitting (a fresh copy starts as this one exits), an onkey:// link
+            _ => platform::app::on_event(app, &event),
         });
 }
 
 /// How long a quit waits for the song playing (and any still finishing) to be learned and saved, when it has to be
 /// quick: told to stop (logging out, `./run` restarting the development build), or restarting for an update.
 const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(25);
+
+/// The app's configuration (tauri.conf.json), but for the release script's update rehearsal, whose fake update is
+/// served over plain http on this Mac: the updater takes that address only then (updater::rehearsal_url), and the
+/// signature is still checked. Every other run keeps tauri.conf.json's https-only setting.
+fn context() -> tauri::Context<tauri::Wry> {
+    let mut context = tauri::generate_context!();
+    if updater::rehearsal_url().is_some() {
+        if let Some(u) = context.config_mut().plugins.0.get_mut("updater") {
+            u["dangerousInsecureTransportProtocol"] = serde_json::Value::Bool(true);
+        }
+    }
+    context
+}
+
+/// How long a quit the app can't hide during (RunEvent::Exit: the Dock's Quit, logging out) waits: the window
+/// stays up and frozen meanwhile, so only a moment.
+const QUIT_BRIEF: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Quit (⌘Q, or the last window closed): OnKey looks gone at once (windows and Dock icon), and finishes learning
+/// the song playing and any still waiting in the background before it exits. Songs learn one at a time, so
+/// waiting 25 s lost a song queued behind another (Galway Girl, 19 Oct).
+fn quit_out_of_sight(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    for w in app.webview_windows().values() {
+        let _ = w.hide();
+    }
+    platform::app::hide_dock(app);
+    std::thread::spawn(|| {
+        engine::shutdown(QUIT_LEARN_WAIT);
+        updater::install();     // an update downloaded and not yet installed: the next launch is the new version
+        relaunch_if_asked();
+        std::process::exit(0);
+    });
+}
 
 static RELAUNCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -923,10 +1350,7 @@ fn relaunch_if_asked() {
     if !RELAUNCH.load(std::sync::atomic::Ordering::SeqCst) {
         return;
     }
-    // .../OnKey.app/Contents/MacOS/onkey -> .../OnKey.app
-    if let Some(bundle) = std::env::current_exe().ok().and_then(|e| e.ancestors().nth(3).map(|p| p.to_path_buf())) {
-        let _ = std::process::Command::new("/bin/sh").arg("-c").arg("sleep 1; /usr/bin/open -n \"$0\"").arg(&bundle).spawn();
-    }
+    platform::app::relaunch();
 }
 
 /// How long a quit from the menu waits, out of sight, for every song being learned or waiting to be (each takes
@@ -957,13 +1381,43 @@ fn on_terminate() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn stopping_a_listen_back_leaves_another_song_playing() {
+        let along = super::Along { app: crate::source::Source::Spotify, play: Some("spotify:track:dream".into()), seen: "take-1".into() };
+        assert!(super::is_along_song("spotify:track:dream", "take-1", &along));
+        assert!(super::is_along_song("take-1", "take-1", &along));
+        assert!(!super::is_along_song("spotify:track:anotherlove", "take-1", &along), "a song started since is left alone");
+    }
+
+    #[test]
     fn settings_links_open_only_exactly_as_given() {
         assert!(super::link_allowed("https://discord.gg/afHvqTNS6r"));
         assert!(super::link_allowed("https://singonkey.app"));
         assert!(super::link_allowed("https://dsmurrell.com"));
+        assert!(super::link_allowed("https://singonkey.app/docs/"));
+        assert!(super::link_allowed("https://singonkey.app/changelog/"));
+        assert!(super::link_allowed("https://lrclib.net"));
+        assert!(!super::link_allowed("https://lrclib.net/api/get?x=1"));
+        assert!(!super::link_allowed("https://singonkey.app/docs/../c/"));
         assert!(!super::link_allowed("https://discord.gg/someoneelse"));
         assert!(!super::link_allowed("https://singonkey.app.evil.example"));
         assert!(!super::link_allowed("https://discord.gg/afHvqTNS6r --args"));
+        // a language's catalog, for "Improve this translation"
+        assert!(super::link_allowed("https://github.com/dsmurrell/onkey/blob/main/ui/messages/zh-Hant.json"));
+        assert!(super::link_allowed("https://github.com/dsmurrell/onkey/blob/main/ui/messages/es-ES.json"));
+        assert!(!super::link_allowed("https://github.com/dsmurrell/onkey/blob/main/ui/messages/../../README.md.json"));
+        assert!(!super::link_allowed("https://github.com/dsmurrell/onkey/blob/main/ui/messages/es.json?x=1"));
+        assert!(!super::link_allowed("https://github.com/dsmurrell/onkey/blob/main/ui/messages/.json"));
+        assert!(!super::link_allowed("https://github.com/someoneelse/onkey/blob/main/ui/messages/es.json"));
+        assert!(!super::link_allowed("https://github.com/dsmurrell/onkey/issues"));
+    }
+
+    #[test]
+    fn only_a_challenge_link_is_copied() {
+        assert!(super::challenge_link_ok("https://singonkey.app/c/?ref=challenge#song=Yellow&score=91"));
+        assert!(!super::challenge_link_ok("https://singonkey.app.evil.example/c/"));
+        assert!(!super::challenge_link_ok("rm -rf ~"));
+        assert!(!super::challenge_link_ok(&format!("https://singonkey.app/c/#{}", "x".repeat(2000))));
+        assert!(!super::challenge_link_ok("https://singonkey.app/c/#a\nb"));
     }
 
     use super::*;
@@ -976,7 +1430,14 @@ mod tests {
         let pick = |app, id: Option<&str>| Pick { app, id: id.map(String::from) };
         assert_eq!(open_url(&pick(Source::Spotify, Some("spotify:track:5fVZC9GiM4e8vu99W0Xf6J")), Some(&t), None), "spotify:track:5fVZC9GiM4e8vu99W0Xf6J");
         assert_eq!(open_url(&pick(Source::Spotify, None), Some(&t), None), "spotify:search:The%20Fray%20How%20to%20Save%20a%20Life");
+        // an id OnKey made from the song's names (Windows) is no Spotify id: a search
+        assert_eq!(open_url(&pick(Source::Spotify, Some("spotify:media:0123456789abcdef")), Some(&t), None), "spotify:search:The%20Fray%20How%20to%20Save%20a%20Life");
         assert_eq!(open_url(&pick(Source::YouTube, Some("youtube:abc")), Some(&t), None), "https://www.youtube.com/watch?v=abc");
+        // an id that isn't one: a search, never handed to `open` as it is
+        for bad in ["-aTerminal", "file:///Applications/Calculator.app", "spotify:track:x/../y"] {
+            assert_eq!(open_url(&pick(Source::Spotify, Some(bad)), Some(&t), None), "spotify:search:The%20Fray%20How%20to%20Save%20a%20Life");
+        }
+        assert_eq!(open_url(&pick(Source::YouTube, Some("youtube:a&b")), Some(&t), None), "https://www.youtube.com/results?search_query=The%20Fray%20How%20to%20Save%20a%20Life");
         assert_eq!(open_url(&pick(Source::Music, None), Some(&t), Some("gb")), "music://music.apple.com/search?term=The%20Fray%20How%20to%20Save%20a%20Life");
         let linked = Track { link: Some("https://music.apple.com/us/album/x/1?i=2".into()), ..t.clone() };
         assert_eq!(open_url(&pick(Source::Music, Some("music:ABC")), Some(&linked), Some("gb")), "music://music.apple.com/gb/album/x/1?i=2",

@@ -50,6 +50,8 @@ These requests do go out:
 - iTunes Search and Lookup (Apple): an artist and title, or the ID Shazam returned, for covers and the song's
   length. The cover images come from Spotify's, Apple's or YouTube's image hosts.
 - GitHub: a check for a new version a minute after launch and once a day, and its download.
+- Feedback (feedback.singonkey.app, mine): only when you press Send in "Send feedback", or tap a thumb on a take's card: your thumb, what you
+  wrote, your email if you gave one, OnKey's version, your system and the app's language. It's emailed to me.
 
 Settings has a switch for Shazam, for lyrics and for the update check. [Privacy](https://singonkey.app/docs/privacy/)
 lists everything OnKey keeps and sends, and [scripts/release-hosts.txt](scripts/release-hosts.txt) lists every web
@@ -60,7 +62,7 @@ address in a release.
 OnKey is for practising at home, with music you're entitled to play. Please:
 
 - Keep what it learns to yourself. Its transcription of each song's melody is for your practice, so don't share or
-  publish it.
+  publish it. Sharing OnKey itself is welcome.
 - To share a take, use **Share** on its page. It makes a short video of your voice and your pitch line, with no
   music, and you can add the song from Instagram's own music library, which is licensed for this. Headphone takes
   are best: sung on speakers, some of the song is in your recording. Don't post screen recordings with the music
@@ -95,6 +97,21 @@ Your build runs on your own Mac. The one thing it can't do is ask Shazam to name
 signature. Spotify and Apple Music say what's playing themselves, so that only affects YouTube and Listen only. [CONTRIBUTING.md](CONTRIBUTING.md) has the details, the tests, and how to check a release's checksums. My
 releases are signed with my Apple Developer ID and notarised by Apple (`spctl -a -vv /Applications/OnKey.app`
 shows who signed it).
+
+## Code signing policy
+
+Windows releases of OnKey are code-signed. Free code signing is provided by
+[SignPath.io](https://signpath.io), with a certificate from the [SignPath Foundation](https://signpath.org).
+
+Only builds made by this repository's GitHub Actions workflow from a tagged commit are signed, and each
+release is approved by hand before it is signed.
+
+- Committers and reviewers: [Daniel Murrell](https://github.com/dsmurrell)
+- Approver: [Daniel Murrell](https://github.com/dsmurrell)
+
+What OnKey sends over the network, and when, is listed under [Privacy](#privacy).
+
+The first signed release is on its way. The Windows test builds published so far are not signed.
 
 ## Licence and credits
 
