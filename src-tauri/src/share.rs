@@ -355,7 +355,7 @@ mod tests {
         assert!((line[0][0].as_f64().unwrap() + 1.3).abs() < 0.02, "from 1.3 s before the clip");
         assert!((line[0][1].as_f64().unwrap() - 60.2).abs() < 1e-6, "48.2 moved up an octave to the singer's 60");
         assert!(s["hi"].as_f64().unwrap() - s["lo"].as_f64().unwrap() >= 8.0);
-        assert_eq!(s["end"], json!(["Sing on key", "Free for Mac", "singonkey.app"]), "the end card");
+        assert_eq!(s["end"], json!(["唱准每个音", "Mac 版免费", "singonkey.app"]), "the default Simplified Chinese end card");
         assert_eq!(s["end_s"].as_f64(), Some(1.5));
     }
 
