@@ -1,0 +1,91 @@
+%% OnKey architecture overview
+%% Source of truth for the rendered SVG attached to ISSUE-332.
+flowchart LR
+  classDef input fill:#eef2f7,stroke:#7a8399,color:#2d3142,stroke-width:1px
+  classDef focal fill:#fff1e9,stroke:#eb6c36,color:#2d3142,stroke-width:1.5px
+  classDef backend fill:#ffffff,stroke:#2d3142,color:#2d3142,stroke-width:1px
+  classDef store fill:#eef0f3,stroke:#4f5d75,color:#2d3142,stroke-width:1px
+  classDef external fill:#f5f5f5,stroke:#7a8399,color:#2d3142,stroke-width:1px
+  classDef ui fill:#f8f5ff,stroke:#6d5bd0,color:#2d3142,stroke-width:1px
+
+  subgraph INPUT[输入与播放来源]
+    direction TB
+    USER[用户演唱]:::input
+    MUSIC[Spotify / Apple Music]:::input
+    BROWSER[浏览器中的 YouTube]:::input
+    MIC[麦克风]:::input
+  end
+
+  subgraph NATIVE[macOS Tauri 原生层]
+    direction TB
+    CAPTURE[音频采集与同步\ncapture / listen / source]:::backend
+    CONTROL[音乐应用控制\nSpotify / Apple Music / YouTube]:::backend
+    ENGINE[实时演唱引擎\nengine / take / tracker]:::focal
+    COMMANDS[Tauri commands + events\nlib.rs ↔ WebView]:::backend
+  end
+
+  subgraph DSP[本地学习与评分流水线]
+    direction TB
+    SEPARATE[人声分离\nMDX / bleed / analysis]:::backend
+    PITCH[音高跟踪\nCREPE / pitch]:::backend
+    NOTES[旋律与音符生成\nGAME / notes / syllables]:::backend
+    SCORE[演唱评分与报告\nscore / records / report]:::backend
+  end
+
+  subgraph UI[React + Next.js 界面]
+    direction TB
+    SING[演唱页\nLane / LiveBits / Lyrics]:::ui
+    LIBRARY[曲库、历史与歌曲详情]:::ui
+    SETUP[首次设置与权限提示]:::ui
+    SESSION[session.ts\n状态、事件与本地调用]:::backend
+  end
+
+  subgraph LOCAL[本机持久化]
+    direction TB
+    STORE[本地歌曲与旋律缓存\nstore / lyrics / syllables]:::store
+    TAKES[演唱记录、录音与报告\nrecords / takeaudio / report]:::store
+    SETTINGS[设置与权限状态\nsettings / permissions]:::store
+  end
+
+  subgraph CLOUD[外部服务]
+    direction TB
+    SHAZAM[Apple Shazam\n歌曲识别指纹]:::external
+    LRCLIB[LRCLIB\n同步歌词]:::external
+    SEARCH[iTunes / Spotify / YouTube\n歌曲与封面信息]:::external
+    GITHUB[GitHub Releases\n更新检查与下载]:::external
+  end
+
+  MUSIC --> CAPTURE
+  BROWSER --> CAPTURE
+  MIC --> CAPTURE
+  MUSIC -. 控制播放 .-> CONTROL
+  BROWSER -. 控制播放 .-> CONTROL
+  USER --> ENGINE
+  CAPTURE --> ENGINE
+  CONTROL --> ENGINE
+  ENGINE --> COMMANDS
+  ENGINE --> SEPARATE
+  SEPARATE --> PITCH
+  PITCH --> NOTES
+  NOTES --> SCORE
+  NOTES --> STORE
+  SCORE --> TAKES
+  STORE --> ENGINE
+  TAKES --> ENGINE
+  COMMANDS <--> SESSION
+  SESSION --> SING
+  SESSION --> LIBRARY
+  SESSION --> SETUP
+  SETTINGS --> SESSION
+  SESSION --> SETTINGS
+  ENGINE -. 歌曲识别 .-> SHAZAM
+  SESSION -. 歌词查询 .-> LRCLIB
+  SESSION -. 歌曲/封面查询 .-> SEARCH
+  SESSION -. 更新检查 .-> GITHUB
+
+  style INPUT fill:#f5f5f5,stroke:#bfc0c0,stroke-width:1px
+  style NATIVE fill:#fffaf7,stroke:#eb6c36,stroke-width:1px
+  style DSP fill:#f5f5f5,stroke:#bfc0c0,stroke-width:1px
+  style UI fill:#fbfaff,stroke:#b7aef0,stroke-width:1px
+  style LOCAL fill:#f5f5f5,stroke:#bfc0c0,stroke-width:1px
+  style CLOUD fill:#f5f5f5,stroke:#bfc0c0,stroke-width:1px

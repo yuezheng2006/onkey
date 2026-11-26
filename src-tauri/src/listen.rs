@@ -16,6 +16,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Mutex;
 use std::time::Instant;
 
+use crate::messages::Line;
 use crate::recognize::{Match, Recognizer, SR};
 use crate::source::{Source, State, Track};
 
@@ -57,6 +58,11 @@ const VERIFY_AFTER_GAP_S: f64 = 2.0;
 const JUMP_S: f64 = 1.0;
 /// a jump by Shazam's place alone, with no gap, is believed only from answers over this long (s)
 const JUMP_SPAN_S: f64 = 20.0;
+/// a jump forward by this much (s) with the sound running on is the learned copy's fault, not the music's: it has
+/// time in it the song hasn't (Store::note_slips)
+const SLIP_S: std::ops::RangeInclusive<f64> = JUMP_S..=3.0;
+/// such jumps seen while songs played, not yet kept with their song: (song id, where, by how much)
+static SLIPS: Mutex<Vec<(String, f64, f64)>> = Mutex::new(Vec::new());
 /// checks that fit the clock but all sit more than this far to one side of it: the clock drifts, and is slewed
 const DRIFT_S: f64 = 0.25;
 /// how fast a drift is taken up (s per s of music)
@@ -93,8 +99,7 @@ const ALIAS_S: f64 = 3.0;
 /// words once versions and features are left out ("Somewhere Over the Rainbow" and "Over the Rainbow / What a
 /// Wonderful World", "Shallow" and "Shallow - Radio Edit").
 pub fn same_song(a: &Track, b: &Track) -> bool {
-    let norm = |s: &str| s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>();
-    if a.artist.is_empty() || norm(&a.artist) != norm(&b.artist) {
+    if a.artist.is_empty() || !crate::store::same_artist(&a.artist, &b.artist) {
         return false;
     }
     let words = |s: &str| -> Vec<String> {
@@ -329,22 +334,22 @@ impl Listener {
         self.song_ended_at = Some(self.t);
     }
 
-    /// What listening is doing, for the window's status line, while no song is being followed: (kind, words).
+    /// What listening is doing, for the window's status line, while no song is being followed: its kind and words
+    /// (messages.rs `Line`; every kind in src-tauri/messages/KINDS.md).
     /// None: a song is followed (the engine says what it's doing with it), or nothing sounds.
-    pub fn status(&self) -> Option<(&'static str, String)> {
+    pub fn status(&self) -> Option<Line> {
         if self.cur.is_some() || self.sound_run < 0.3 {
             return None;
         }
-        let s = |k, w: &str| Some((k, w.to_string()));
-        if self.fails >= GIVE_UP_AFTER {
-            s("unnamed", "Couldn’t name this song")
+        Some(if self.fails >= GIVE_UP_AFTER {
+            Line::new("unnamed", "Couldn’t name this song")
         } else if self.shazam_resting {
-            s("no_shazam", "Shazam unavailable: only songs learned here are recognised")
+            Line::new("no_shazam", NO_SHAZAM)
         } else if self.song_ended_at.is_some_and(|e| self.t - e < 60.0) {
-            s("new_song", "New song… finding it")
+            Line::new("new_song", "New song… finding it")
         } else {
-            s("finding", "Hearing music… finding the song")
-        }
+            Line::new("finding", "Hearing music… finding the song")
+        })
     }
 
     /// OnKey itself moved the song to `pos` (its restart, skip or seek): the clock goes there at once. The sound
@@ -794,6 +799,13 @@ impl Listener {
                 let agrees = same && (pos - c.pos).abs() <= JUMP_S;
                 if agrees && !c.unsure {
                     c.sure = true;
+                    // the first check after a move, placed exactly here (not Shazam's place): the clock goes there.
+                    // A move puts the clock where the app says, less its lead as measured, which can be most of a
+                    // second off (offline, alongheard: a drag 0.2-0.8 s off left the recording that far off after it)
+                    if req.gap && other.is_none() && (pos - c.pos).abs() > 0.05 {
+                        self.notes.push((t, format!("check of {} after a move places it at {pos:.2} s (clock {:.2} s)", c.track.name, c.pos)));
+                        c.pos = pos;
+                    }
                     if let Some(s) = self.suspect.take() {
                         let what = if s.id == c.track.id { format!("{:.1} s", s.pos + (t - s.t)) } else { s.id };
                         self.notes.push((t, format!("check of {} fits the clock ({:.1} s): {what} not believed", c.track.name, c.pos)));
@@ -881,6 +893,17 @@ impl Listener {
                         c.sure = true;
                         c.pos = pos;
                         self.sound_since = self.sound_since.max(jump_at);
+                        // ahead with the sound running on (no seek, no gap): the learned copy has time the song
+                        // hasn't (27 Oct: Take On Me, 1.26 s of silence while the output switched, +1.27 s at 2:06
+                        // on every play since). Kept with the song: the same jump on two plays suggests a relearn
+                        if !gap && SLIP_S.contains(&(pos - from)) {
+                            let mut slips = SLIPS.lock().unwrap();
+                            slips.push((c.track.id.clone(), from, pos - from));
+                            let n = slips.len();
+                            if n > 50 {
+                                slips.drain(..n - 50);
+                            }
+                        }
                         self.event(Event::Jumped { from, to: pos });
                     }
                 } else if let Some(m) = other {
@@ -927,7 +950,9 @@ pub fn work(r: &mut dyn Recognizer, req: &Request) -> Answer {
 
 /// Apps listened to, by the bundle id prefix of the processes that play their sound. Capturing them needs only
 /// the audio-recording permission, never control of the app. The music apps always; a browser only while
-/// YouTube is in use (see `may_listen`): its sound is anything (calls, podcasts, other videos).
+/// YouTube is in use (see `may_listen`): its sound is anything (calls, podcasts, other videos). Windows and Linux
+/// add Opera and Vivaldi, which publish a media session / MPRIS player OnKey follows (platform/*/browsers.rs).
+#[cfg(target_os = "macos")]
 pub const APPS: [(&str, &str); 8] = [
     ("com.spotify.client", "Spotify"),
     ("com.apple.Music", "Apple Music"),
@@ -937,6 +962,19 @@ pub const APPS: [(&str, &str); 8] = [
     ("com.microsoft.edgemac", "Edge"),
     ("company.thebrowser.Browser", "Arc"),
     ("org.mozilla.firefox", "Firefox"),
+];
+#[cfg(not(target_os = "macos"))]
+pub const APPS: [(&str, &str); 10] = [
+    ("com.spotify.client", "Spotify"),
+    ("com.apple.Music", "Apple Music"),
+    ("com.google.Chrome", "Chrome"),
+    ("com.apple.WebKit.GPU", "Safari"),
+    ("com.brave.Browser", "Brave"),
+    ("com.microsoft.edgemac", "Edge"),
+    ("company.thebrowser.Browser", "Arc"),
+    ("org.mozilla.firefox", "Firefox"),
+    ("com.operasoftware.Opera", "Opera"),
+    ("com.vivaldi.Vivaldi", "Vivaldi"),
 ];
 
 /// WebKit's shared sound process: Safari's, and also OnKey's own window's (and Mail's).
@@ -994,7 +1032,7 @@ pub fn browser_unheard() -> Option<(&'static str, bool)> {
 
 /// `browser_unheard`'s choice: a browser OnKey can follow first, then the others.
 fn unheard_browser(sounding: impl Fn(&str) -> bool, listening: bool) -> Option<(&'static str, bool)> {
-    let followable = |b: &str| crate::youtube::browser_for_audio(b).is_some();
+    let followable = crate::youtube::followable;
     let browsers = || APPS.iter().filter(|(b, _)| !matches!(*b, "com.spotify.client" | "com.apple.Music"));
     browsers().filter(|(b, _)| followable(b)).chain(browsers().filter(|(b, _)| !followable(b)))
         .find(|(b, _)| sounding(b))
@@ -1006,13 +1044,19 @@ pub fn source_of(bundle: &str) -> Source {
     match bundle {
         "com.spotify.client" => Source::Spotify,
         "com.apple.Music" => Source::Music,
-        b if crate::youtube::browser_for_audio(b).is_some() => Source::YouTube,
+        b if crate::youtube::followable(b) => Source::YouTube,
         _ => Source::Other,
     }
 }
 
 pub fn app_name(bundle: &str) -> &'static str {
-    APPS.iter().find(|(b, _)| *b == bundle).map_or("your music app", |(_, n)| n)
+    app_name_known(bundle).unwrap_or("your music app")
+}
+
+/// As `app_name`, but None for an app OnKey has no name for: what goes to the window, which says "your music app"
+/// in its own language.
+pub fn app_name_known(bundle: &str) -> Option<&'static str> {
+    APPS.iter().find(|(b, _)| *b == bundle).map(|(_, n)| *n)
 }
 
 /// The app playing sound now (the one already followed while it still plays), of those that may be listened
@@ -1041,6 +1085,11 @@ struct Host {
     rx: Receiver<(Request, Answer)>,
     last_feed: Instant,
     bundle: Option<&'static str>,
+    /// timing diagnostics (`timing`): the last block's length (s), and how far the audio fed has fallen behind the
+    /// wall clock since `fed_from` (fed without a break of over a second): `fed_s` of audio in that time
+    block_s: f64,
+    fed_from: Instant,
+    fed_s: f64,
 }
 
 static HOST: Mutex<Option<Host>> = Mutex::new(None);
@@ -1081,7 +1130,16 @@ fn start_host(rate: f64) -> Host {
                 r = build();
             }
             let asked = Instant::now();
-            let a = work(r.as_mut(), &req);
+            // (a panic in it, reading a reply say, is an answer of nothing, and a recogniser made afresh: the worker
+            // carries on, else listening would wait for this answer for good and never name another song)
+            let a = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(r.as_mut(), &req))) {
+                Ok(a) => a,
+                Err(_) => {
+                    crate::engine::log("listening: recognising failed (a panic): taken as nothing named");
+                    r = build();
+                    Answer::Identified(None)
+                }
+            };
             // the records: each recognition request, how long it took and what it answered (ids and numbers)
             crate::records::note("recognize", serde_json::json!({"kind": format!("{:?}", req.kind), "gap": req.gap,
                 "ms": (asked.elapsed().as_secs_f64() * 10_000.0).round() / 10.0, "audio_s": req.audio.len() as f64 / SR as f64,
@@ -1101,7 +1159,7 @@ fn start_host(rate: f64) -> Host {
             }
         }
     }).unwrap();
-    Host { l: Listener::new(), rs: crate::resample::Resampler::new(rate, SR as f64), rate, tx, rx, last_feed: Instant::now(), bundle: None }
+    Host { l: Listener::new(), rs: crate::resample::Resampler::new(rate, SR as f64), rate, tx, rx, last_feed: Instant::now(), bundle: None, block_s: 0.0, fed_from: Instant::now(), fed_s: 0.0 }
 }
 
 /// The captured audio (interleaved [music L, music R, mic]) from the app `bundle`, as the engine drains it.
@@ -1130,9 +1188,30 @@ pub fn feed(block: &[f32], rate: f64, bundle: &'static str) {
     h.rs.process(&mono, &mut x16);
     let before = h.l.events.len();
     h.l.feed(&x16);
-    h.last_feed = Instant::now();
-    while let Ok((req, a)) = h.rx.try_recv() {
-        h.l.answer(&req, a);
+    let now = Instant::now();
+    h.block_s = mono.len() as f64 / rate;
+    // (the first block after a break covers time before it: counting starts from its end)
+    if now.duration_since(h.last_feed).as_secs_f64() > 1.0 {
+        h.fed_from = now;
+        h.fed_s = 0.0;
+    } else {
+        h.fed_s += h.block_s;
+    }
+    h.last_feed = now;
+    loop {
+        match h.rx.try_recv() {
+            Ok((req, a)) => h.l.answer(&req, a),
+            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+            // the recognising thread is gone: a new one, and the request it had is asked again
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                crate::engine::log("listening: the recognising thread stopped: started again");
+                let fresh = start_host(rate);
+                h.tx = fresh.tx;
+                h.rx = fresh.rx;
+                h.l.asked = false;
+                break;
+            }
+        }
     }
     if let Some(req) = h.l.want() {
         REQUESTS[(req.kind == Kind::Verify) as usize].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1151,6 +1230,14 @@ pub fn feed(block: &[f32], rate: f64, bundle: &'static str) {
     }
 }
 
+/// The jumps that blamed song `id`'s learned copy (see SLIP_S), since last asked: (where, by how much).
+pub fn take_slips(id: &str) -> Vec<(f64, f64)> {
+    let mut slips = SLIPS.lock().unwrap();
+    let mine = slips.iter().filter(|s| s.0 == id).map(|s| (s.1, s.2)).collect();
+    slips.retain(|s| s.0 != id);
+    mine
+}
+
 /// Seconds of sound heard since the last pause (as far as it's kept): a song the music app says started that
 /// long ago or less began within it.
 pub fn heard_since_pause() -> f64 {
@@ -1167,23 +1254,26 @@ pub fn lead_in(id: &str) -> f64 {
 static AWAY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// What listening is doing while no song is followed, for the status line (see `Listener::status`).
-pub fn status_line() -> Option<(&'static str, String)> {
+pub fn status_line() -> Option<Line> {
     if AWAY.load(std::sync::atomic::Ordering::Relaxed) {
         if let Some(b) = want_bundle() {
-            return Some(("elsewhere", format!("{} is playing, but not on this Mac", app_name(b))));
+            let app = app_name(b);
+            return Some(Line::new("elsewhere", format!("{app} is playing, but not on this Mac")).with("app", app));
         }
     }
     let g = HOST.lock().unwrap();
     let st = g.as_ref()?.l.status()?;
-    if std::env::var("ONKEY_NO_SHAZAM").is_ok() && st.0 != "unnamed" {
-        return Some(("no_shazam", "Shazam unavailable: only songs learned here are recognised".into()));
+    if std::env::var("ONKEY_NO_SHAZAM").is_ok() && st.kind != "unnamed" {
+        return Some(Line::new("no_shazam", NO_SHAZAM));
     }
     // switched off in Settings: a song not learned here is never named, and that's why
-    if !crate::settings::shazam() && matches!(st.0, "unnamed" | "no_shazam") {
-        return Some(("shazam_off", "Not a song learned here: Shazam is off in Settings".into()));
+    if !crate::settings::shazam() && matches!(st.kind, "unnamed" | "no_shazam") {
+        return Some(Line::new("shazam_off", "Not a song learned here: Shazam is off in Settings"));
     }
     Some(st)
 }
+
+const NO_SHAZAM: &str = "Shazam unavailable: only songs learned here are recognised";
 
 /// Song `id` came to its end (rather than being lost for a moment), and nothing's been named since.
 pub fn is_over(id: &str) -> bool {
@@ -1238,6 +1328,16 @@ pub fn position(id: &str, app_pos: f64) -> Position {
         Some(p) => Position { pos: p, lead: lead_in(id), exact: false, sure: sure_of(id), heard: true },
         None => own(false),
     }
+}
+
+/// For the log of "Play with the song" (diagnostics only): how old listening's last feed is (s), how long that block
+/// of audio was (s), and how far the audio fed has fallen behind the wall clock while fed without a break (s:
+/// growing means the capture delivers late, or loses audio).
+pub fn timing() -> Option<(f64, f64, f64)> {
+    let g = HOST.lock().unwrap();
+    let h = g.as_ref()?;
+    let behind = h.last_feed.duration_since(h.fed_from).as_secs_f64() - h.fed_s;
+    Some((h.last_feed.elapsed().as_secs_f64(), h.block_s, behind))
 }
 
 fn sure_of(id: &str) -> bool {
@@ -1298,18 +1398,25 @@ pub fn follow() -> Option<State> {
     }
     // a song OnKey just asked the app to play: what it says before it really plays it from the start (the song
     // before, or the new one at 0 while it loads) isn't believed (see `starting_says`)
+    // (an answer not believed isn't run on below either: that would follow the same stale answer as the app's)
+    let mut ignored = false;
     let app = match app {
         Some(s) => {
             let now = start_clock();
             match starting_says(&mut STARTING.lock().unwrap(), &s, now) {
-                Start::Ignore => None,
+                Start::Ignore => {
+                    ignored = true;
+                    None
+                }
                 Start::Waiting => Some(State { playing: false, ..s }),
                 Start::Playing => Some(s),
             }
         }
         None => None,
     };
-    FROM_APP.store(app.is_some(), std::sync::atomic::Ordering::Relaxed);
+    // (on Windows, a browser whose timeline isn't seen current yet, or an app whose timeline can't be trusted:
+    // listening's alignment places the song)
+    FROM_APP.store(app.as_ref().is_some_and(|s| crate::source::exact_position(s.source)), std::sync::atomic::Ordering::Relaxed);
     // a podcast episode, an audiobook or an ad is never a song: nothing followed (no take, nothing learned)
     let not_song = app.as_ref().is_some_and(|s| !crate::source::is_song(&s.track.id));
     NOT_SONG.store(not_song && app.as_ref().is_some_and(|s| s.playing), std::sync::atomic::Ordering::Relaxed);
@@ -1330,7 +1437,7 @@ pub fn follow() -> Option<State> {
         // the music app didn't answer: listening's word, else (for a few seconds, while it still sounds) the app's
         // last, run on
         None => state().or_else(|| {
-            let held = APP_SAID.lock().unwrap().as_ref().filter(|_| music_app && now.is_some() && crate::source::controllable(src.unwrap()))
+            let held = APP_SAID.lock().unwrap().as_ref().filter(|_| !ignored && music_app && now.is_some() && crate::source::controllable(src.unwrap()))
                 .and_then(|(s, t)| app_held(s, t.elapsed().as_secs_f64()));
             if held.is_some() {
                 FROM_APP.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1643,7 +1750,7 @@ mod tests {
         // asked every 3 s (only the songs on this Mac, while Shazam rests), never given up on
         assert!(r.asked >= 15, "{}", r.asked);
         assert!(!l.events.iter().any(|(_, e)| *e == Event::NotRecognised));
-        assert_eq!(l.status().unwrap().0, "no_shazam");
+        assert_eq!(l.status().unwrap().kind, "no_shazam");
     }
 
     /// A recogniser still waiting for its answer (Shazam slow after a fresh install), never naming anything.
@@ -1672,7 +1779,7 @@ mod tests {
         // asked again every second, never given up on, and the status line still says it's finding the song
         assert!(r.asked >= 20, "{}", r.asked);
         assert!(!l.events.iter().any(|(_, e)| *e == Event::NotRecognised));
-        assert_eq!(l.status().unwrap().0, "finding");
+        assert_eq!(l.status().unwrap().kind, "finding");
     }
 
     #[test]
@@ -1714,10 +1821,12 @@ mod tests {
         assert_eq!(unheard_browser(|_| false, true), None);
         // Spotify playing isn't a browser
         assert_eq!(unheard_browser(|b| b == "com.spotify.client", true), None);
-        assert_eq!(unheard_browser(|b| b == "com.apple.WebKit.GPU", false), Some(("Safari", true)));
+        // (no Safari on Windows or Linux: nothing follows its sound there)
+        assert_eq!(unheard_browser(|b| b == "com.apple.WebKit.GPU", false), Some(("Safari", cfg!(target_os = "macos"))));
         // Firefox: heard once YouTube is on when listening, but its tab can't be followed otherwise
         assert_eq!(unheard_browser(|b| b == "org.mozilla.firefox", true), Some(("Firefox", true)));
-        assert_eq!(unheard_browser(|b| b == "org.mozilla.firefox", false), Some(("Firefox", false)));
+        // (on Windows and Linux Firefox's media session / MPRIS player is followed, as every browser's)
+        assert_eq!(unheard_browser(|b| b == "org.mozilla.firefox", false), Some(("Firefox", cfg!(not(target_os = "macos")))));
         // Arc and Chrome both sounding: Chrome, which works either way
         assert_eq!(unheard_browser(|b| b == "company.thebrowser.Browser" || b == "com.google.Chrome", false), Some(("Chrome", true)));
     }
@@ -1874,7 +1983,7 @@ mod tests {
         let mut r = Radio::new(vec![song(0.0, "isrc:A", "A", 40.0), song(40.4, "isrc:B", "B", 200.0)]);
         let x = r.audio(50.0);
         let mut l = Listener::new();
-        let kind = |l: &Listener| l.status().map(|s| s.0);
+        let kind = |l: &Listener| l.status().map(|s| s.kind);
         listen_to(&mut l, &mut r, &x[..2 * SR], 1.0, |_, _| {});
         assert_eq!(kind(&l), Some("finding"));
         listen_to(&mut l, &mut r, &x[2 * SR..40 * SR], 1.0, |_, _| {});

@@ -19,11 +19,12 @@ BIN="$APP/Contents/MacOS/onkey"
 fail=0
 bad() { echo "check-release: $*" >&2; fail=1; }
 
-# strings only the development-only code has (devtest.rs, mirror.rs)
+# strings only the development-only code has (devtest.rs, mirror.rs, ear.rs and native/ear.swift)
 FORBIDDEN=(
   ONKEY_SIM ONKEY_EVENTS_LOG ONKEY_MIRROR ONKEY_KEEP_AUDIO
   "simulated singer" "simulated player" "kept audio for lyric tests" "kept mic for echo tests"
-  "__ONKEY_MIRROR__" "event: mirror" "/api/probe"
+  "__ONKEY_MIRROR__" "event: mirror" "/api/probe" "/dev/along" "/api/ear"
+  "onkey_ear_start" "ear summary" "ear: listening to take"
 )
 STR=$(mktemp); trap 'rm -f "$STR"' EXIT
 strings -a "$BIN" > "$STR"
@@ -31,17 +32,21 @@ for s in "${FORBIDDEN[@]}"; do
   if grep -qF -- "$s" "$STR"; then bad "development-only string in the release binary: \"$s\""; fi
 done
 # experiment knobs: environment variables the code reads only in development builds (crate::devtest::knob!), and any
-# new one that skipped it. Only these may be in a release: ONKEY_NO_SHAZAM turns sound recognition's network use off
-# (the lab's benchmarks run the app without reaching Shazam), which is safe for anyone to set.
+# new one that skipped it. Only these may be in a release, each safe for anyone to set:
+#   ONKEY_NO_SHAZAM           sound recognition's network use off (the lab's benchmarks run the app without Shazam)
+#   ONKEY_UPDATE_REHEARSAL    the release's update rehearsal (updater.rs): the app updates from http://127.0.0.1 only,
+#                             the signature still checked, then exits; whoever sets it controls the machine anyway
+#   ONKEY_REPORT_TO           CI's launch checks: a problem report (logs and numbers, no lyrics or audio) saved to
+#                             that path 30 s after launch, as "Report a problem" would
 # (A name can run on into the next string in the binary, "ONKEY_NO_SHAZAMS...": allowed names match as prefixes.)
-ALLOWED_VARS=(ONKEY_NO_SHAZAM)
+ALLOWED_VARS=(ONKEY_NO_SHAZAM ONKEY_UPDATE_REHEARSAL ONKEY_REPORT_TO)
 while read -r v; do
   [ -n "$v" ] || continue
   ok=0; for a in "${ALLOWED_VARS[@]}"; do [[ "$v" == "$a"* ]] && ok=1; done
   [ $ok = 1 ] || bad "experiment knob in the release binary: $v (read it with crate::devtest::knob!)"
 done < <(grep -oE '(ONKEY_[A-Z][A-Z0-9_]*|TRACKER_TRACE|SIM_ERR[A-Z_]*)' "$STR" | sort -u)
-if nm "$BIN" 2>/dev/null | grep -E "onkey_lib(::|[0-9]+)(devtest|mirror)" | grep -vq "stub"; then
-  bad "development-only symbols (devtest/mirror) in the release binary"
+if nm "$BIN" 2>/dev/null | grep -E "onkey_lib(::|[0-9]+)(devtest|mirror|ear)" | grep -vq "stub"; then
+  bad "development-only symbols (devtest/mirror/ear) in the release binary"
 fi
 if codesign -d "$APP" >/dev/null 2>&1; then
   if codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "get-task-allow"; then

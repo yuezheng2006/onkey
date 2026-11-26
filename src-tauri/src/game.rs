@@ -17,18 +17,49 @@ pub struct Game {
     bd2dur: Session,
     /// the stretches (s, from the vocal's start) the last `notes` couldn't transcribe: no notes there isn't silence
     pub failed: Vec<(f64, f64)>,
+    /// the five on DirectML (Windows): how to go to the CPU should a piece fail there
+    gpu: Vec<Option<crate::gpu::Fallback>>,
 }
 
-fn load(dir: &std::path::Path, name: &str, threads: usize) -> Result<Session, String> {
-    Session::builder().and_then(|b| b.with_optimization_level(GraphOptimizationLevel::Level3))
-        .and_then(|b| b.with_intra_threads(threads)).and_then(crate::pitch::lean).and_then(|b| b.commit_from_file(dir.join(format!("{name}.onnx"))))
-        .map_err(|e| format!("loading GAME {name}: {e}"))
+/// Each of the five on the CPU, on every OS, as on a Mac. Not on DirectML: on a Windows laptop (2 Nov) GAME ran
+/// there without an error but gave wrong notes, long runs of one note, so every syllable of a line got the same bar
+/// (the pitch line, from CREPE on the same GPU, matched the Mac's); a wrong answer isn't a failure, so the fall-back
+/// to the CPU never came. GAME is small and runs once per learned song: the CPU costs seconds, not minutes.
+fn load(dir: &std::path::Path, name: &str, threads: usize, gpu: &mut Vec<Option<crate::gpu::Fallback>>) -> Result<Session, String> {
+    let s = Session::builder()
+        .and_then(|b| b.with_optimization_level(GraphOptimizationLevel::Level3))
+        .and_then(|b| b.with_intra_threads(threads))
+        .and_then(crate::pitch::lean)
+        .and_then(|b| b.commit_from_file(dir.join(format!("{name}.onnx"))))
+        .map_err(|e| format!("loading GAME {name}: {e}"))?;
+    gpu.push(None);
+    Ok(s)
 }
 
 impl Game {
     pub fn load(dir: &std::path::Path, threads: usize) -> Result<Game, String> {
-        Ok(Game { encoder: load(dir, "encoder", threads)?, segmenter: load(dir, "segmenter", threads)?,
-                  estimator: load(dir, "estimator", threads)?, dur2bd: load(dir, "dur2bd", threads)?, bd2dur: load(dir, "bd2dur", threads)?, failed: Vec::new() })
+        let mut gpu = Vec::new();
+        Ok(Game { encoder: load(dir, "encoder", threads, &mut gpu)?, segmenter: load(dir, "segmenter", threads, &mut gpu)?,
+                  estimator: load(dir, "estimator", threads, &mut gpu)?, dur2bd: load(dir, "dur2bd", threads, &mut gpu)?,
+                  bd2dur: load(dir, "bd2dur", threads, &mut gpu)?, failed: Vec::new(), gpu })
+    }
+
+    /// `piece`, with all five on the CPU from now on if it failed on DirectML (whichever failed: they're used together).
+    fn piece_or_cpu(&mut self, w: &[f32]) -> Result<Vec<(f64, f64, f32)>, String> {
+        let r = self.piece(w);
+        if let Err(e) = &r {
+            if self.gpu.iter().any(|f| f.is_some()) {
+                let gpu = std::mem::take(&mut self.gpu);
+                let sessions = [&mut self.encoder, &mut self.segmenter, &mut self.estimator, &mut self.dur2bd, &mut self.bd2dur];
+                for (s, f) in sessions.into_iter().zip(gpu) {
+                    if let Some(f) = f {
+                        *s = f.to_cpu(e).map_err(|e| e.to_string())?;
+                    }
+                }
+                return self.piece(w);
+            }
+        }
+        r
     }
 
     /// Notes (start s, end s, MIDI) in a 16 kHz vocal, times from its start.
@@ -57,7 +88,7 @@ impl Game {
                     tried += 1;
                     let t0 = off + (k - a) as f64 / SR as f64;
                     // one piece the model can't handle loses only that piece's notes, not the whole song's
-                    match self.piece(&x[k..e]) {
+                    match self.piece_or_cpu(&x[k..e]) {
                         Ok(notes) => out.extend(notes.into_iter().map(|(s, f, m)| (t0 + s, t0 + f, m))),
                         Err(err) => {
                             failed += 1;
